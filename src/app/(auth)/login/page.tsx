@@ -1,12 +1,11 @@
 "use client"; // Necesario en Next.js App Router para componentes interactivos (formularios, useState)
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { authService } from "@/services/auth.service";
 import axios from "axios";
+import { useAuth } from "@/context/AuthContext";
 
 export default function LoginPage() {
-  const router = useRouter();
+  const { login } = useAuth();
 
   const [formData, setFormData] = useState({
     email: "",
@@ -22,8 +21,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await authService.login(formData);
-      router.push("/dashboard");
+      await login(formData);
     } catch (err: unknown) {
       let errorMessage = "Error al iniciar sesión";
       if (axios.isAxiosError(err)) {
