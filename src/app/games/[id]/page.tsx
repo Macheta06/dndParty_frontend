@@ -1,18 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { gameService } from "@/services/game.service";
 import { GameDetail } from "@/types/game";
 import Link from "next/link";
 
-export default function GameRoomPage({ params }: { params: { id: string } }) {
+export default function GameRoomPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { user } = useAuth();
   const [game, setGame] = useState<GameDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  const gameId = params.id;
+  const { id: gameId } = use(params);
 
   useEffect(() => {
     async function fetchGame() {

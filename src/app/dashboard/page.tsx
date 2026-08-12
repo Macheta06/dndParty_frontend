@@ -104,7 +104,7 @@ export default function DashboardPage() {
                     </p>
                   </div>
                   <Link
-                    href={`/game/${game.id}`}
+                    href={`/games/${game.id}`}
                     className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 rounded text-xs transition-colors"
                   >
                     Entrar a la Sala
