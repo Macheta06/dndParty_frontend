@@ -1,5 +1,6 @@
 "use client";
 
+import { io, Socket } from "socket.io-client";
 import { use, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { gameService } from "@/services/game.service";
@@ -36,6 +37,36 @@ export default function GameRoomPage({
     }
     if (user) fetchGame();
   }, [gameId, user]);
+
+  useEffect(() => {
+    const socket: Socket = io(
+      process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000",
+    );
+
+    socket.emit("joinGameRoom", gameId);
+
+    socket.on(
+      "hpUpdated",
+      (data: { characterId: number; current_hp: number }) => {
+        setGame((prevGame) => {
+          if (!prevGame) return prevGame;
+
+          return {
+            ...prevGame,
+            characters: prevGame.characters.map((char) =>
+              char.id === data.characterId
+                ? { ...char, current_hp: data.current_hp }
+                : char,
+            ),
+          };
+        });
+      },
+    );
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [gameId]);
 
   if (loading) {
     return (
