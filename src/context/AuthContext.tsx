@@ -52,7 +52,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// Custom Hook para consumir el contexto fácilmente
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
