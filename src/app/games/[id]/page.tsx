@@ -200,7 +200,6 @@ export default function GameRoomPage({
                   onChange={(e) => {
                     const charId = Number(e.target.value);
                     setSelectedCharId(charId);
-                    // Autocompletamos el input con el HP actual del personaje seleccionado
                     const char = game?.characters.find((c) => c.id === charId);
                     if (char) setNewHp(char.current_hp);
                   }}
