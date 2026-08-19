@@ -12,9 +12,9 @@ export interface Note {
   title: string;
   description: string;
   gameId: string;
-  createdAt: string;
 }
 export interface GameDetail extends Game {
   characters: Character[];
+  npcs: Character[];
   notes?: Note[];
 }
