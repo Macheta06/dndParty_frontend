@@ -1,37 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Socket } from "socket.io-client";
+import { useEffect, useRef } from "react";
 import { DiceRollResult } from "@/types/game";
 
 interface RollHistoryProps {
-  socket: Socket | null;
+  history: DiceRollResult[];
 }
 
-const MAX_HISTORY = 10;
-
-export default function RollHistory({ socket }: RollHistoryProps) {
-  const [history, setHistory] = useState<DiceRollResult[]>([]);
+export default function RollHistory({ history }: RollHistoryProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!socket) return;
-
-    const handleRoll = (data: DiceRollResult) => {
-      setHistory((prev) => {
-        const next = [...prev, data];
-        return next.length > MAX_HISTORY ? next.slice(-MAX_HISTORY) : next;
-      });
-    };
-
-    socket.on("diceRolled", handleRoll);
-    return () => {
-      socket.off("diceRolled", handleRoll);
-    };
-  }, [socket]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    bottomRef.current?.scrollIntoView?.({ behavior: "smooth" });
   }, [history]);
 
   return (

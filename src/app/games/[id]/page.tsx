@@ -8,7 +8,12 @@ import {
   CreateNpcDto,
   CreateNoteDto,
 } from "@/services/game.service";
-import { GameDetail, InitiativeState, Note } from "@/types/game";
+import {
+  DiceRollResult,
+  GameDetail,
+  InitiativeState,
+  Note,
+} from "@/types/game";
 import { Character } from "@/types/character";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -74,6 +79,7 @@ export default function GameRoomPage({
   const [noteDescription, setNoteDescription] = useState("");
 
   const [activeSocket, setActiveSocket] = useState<Socket | null>(null);
+  const [rollHistory, setRollHistory] = useState<DiceRollResult[]>([]);
 
   useEffect(() => {
     async function fetchGame() {
@@ -135,6 +141,10 @@ export default function GameRoomPage({
       setGame((prevGame) =>
         prevGame ? { ...prevGame, initiative: null } : prevGame,
       );
+    });
+
+    socket.on("diceRolled", (roll: DiceRollResult) => {
+      setRollHistory((previous) => [...previous, roll].slice(-10));
     });
 
     socket.on("connect", () => {
@@ -400,11 +410,9 @@ export default function GameRoomPage({
               isMaster={isMaster}
             />
 
-            <DiceRoller
-              socket={activeSocket}
-            />
+            <DiceRoller socket={activeSocket} />
 
-            <RollHistory socket={activeSocket} />
+            <RollHistory history={rollHistory} />
 
             {isMaster && (
               <>
@@ -557,10 +565,11 @@ export default function GameRoomPage({
 
             <form onSubmit={handleCreateNpc} className="space-y-4">
               <div>
-                <label className="block text-sm text-slate-300 mb-1">
+                <label htmlFor="npc-name" className="block text-sm text-slate-300 mb-1">
                   Nombre
                 </label>
                 <input
+                  id="npc-name"
                   type="text"
                   required
                   value={npcName}
@@ -571,10 +580,11 @@ export default function GameRoomPage({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-slate-300 mb-1">
+                  <label htmlFor="npc-max-hp" className="block text-sm text-slate-300 mb-1">
                     HP Máximo
                   </label>
                   <input
+                    id="npc-max-hp"
                     type="number"
                     required
                     min={1}
@@ -588,10 +598,11 @@ export default function GameRoomPage({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-300 mb-1">
+                  <label htmlFor="npc-current-hp" className="block text-sm text-slate-300 mb-1">
                     HP Actual
                   </label>
                   <input
+                    id="npc-current-hp"
                     type="number"
                     required
                     min={0}
@@ -608,10 +619,11 @@ export default function GameRoomPage({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-slate-300 mb-1">
+                  <label htmlFor="npc-race" className="block text-sm text-slate-300 mb-1">
                     Raza (opcional)
                   </label>
                   <input
+                    id="npc-race"
                     type="text"
                     value={npcRace}
                     onChange={(e) => setNpcRace(e.target.value)}
@@ -619,10 +631,11 @@ export default function GameRoomPage({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-300 mb-1">
+                  <label htmlFor="npc-class" className="block text-sm text-slate-300 mb-1">
                     Clase (opcional)
                   </label>
                   <input
+                    id="npc-class"
                     type="text"
                     value={npcClass}
                     onChange={(e) => setNpcClass(e.target.value)}
@@ -667,10 +680,11 @@ export default function GameRoomPage({
 
             <form onSubmit={handleCreateNote} className="space-y-4">
               <div>
-                <label className="block text-sm text-slate-300 mb-1">
+                <label htmlFor="note-title" className="block text-sm text-slate-300 mb-1">
                   Título
                 </label>
                 <input
+                  id="note-title"
                   type="text"
                   required
                   value={noteTitle}
@@ -680,10 +694,11 @@ export default function GameRoomPage({
               </div>
 
               <div>
-                <label className="block text-sm text-slate-300 mb-1">
+                <label htmlFor="note-description" className="block text-sm text-slate-300 mb-1">
                   Descripción
                 </label>
                 <textarea
+                  id="note-description"
                   required
                   rows={4}
                   value={noteDescription}

@@ -279,12 +279,9 @@ describe('GameRoomPage', () => {
       );
       await screen.findByRole('heading', { name: 'Crear Enemigo (NPC)' });
 
-      const textboxes = screen.getAllByRole('textbox');
-      await user.type(textboxes[0], 'Orco');
-
-      const spinbuttons = screen.getAllByRole('spinbutton');
-      await user.type(spinbuttons[0], '12');
-      await user.type(spinbuttons[1], '8');
+      await user.type(screen.getByLabelText('Nombre'), 'Orco');
+      await user.type(screen.getByLabelText('HP Máximo'), '12');
+      await user.type(screen.getByLabelText('HP Actual'), '8');
 
       await user.click(screen.getByRole('button', { name: 'Crear Enemigo' }));
 
@@ -319,9 +316,8 @@ describe('GameRoomPage', () => {
       );
       await screen.findByRole('heading', { name: 'Añadir Nota Oculta' });
 
-      const textboxes = screen.getAllByRole('textbox');
-      await user.type(textboxes[0], 'Mapa del tesoro');
-      await user.type(textboxes[1], 'Enterrado bajo el roble.');
+      await user.type(screen.getByLabelText('Título'), 'Mapa del tesoro');
+      await user.type(screen.getByLabelText('Descripción'), 'Enterrado bajo el roble.');
 
       await user.click(screen.getByRole('button', { name: 'Guardar Nota' }));
 
@@ -349,11 +345,9 @@ describe('GameRoomPage', () => {
         await user.click(
           screen.getByRole('button', { name: '+ Crear Enemigo (NPC)' }),
         );
-        const textboxes = screen.getAllByRole('textbox');
-        await user.type(textboxes[0], 'Orco');
-        const spinbuttons = screen.getAllByRole('spinbutton');
-        await user.type(spinbuttons[0], '12');
-        await user.type(spinbuttons[1], '8');
+        await user.type(screen.getByLabelText('Nombre'), 'Orco');
+        await user.type(screen.getByLabelText('HP Máximo'), '12');
+        await user.type(screen.getByLabelText('HP Actual'), '8');
         await user.click(screen.getByRole('button', { name: 'Crear Enemigo' }));
 
         await waitFor(() => expect(alertSpy).toHaveBeenCalled());

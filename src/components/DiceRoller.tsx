@@ -11,12 +11,6 @@ const QUICK_DICE = ["1d20", "1d6", "1d8", "1d10", "1d12", "1d100"] as const;
 
 export default function DiceRoller({ socket }: DiceRollerProps) {
   const [formula, setFormula] = useState("");
-  const [lastRoll, setLastRoll] = useState<{
-    formula: string;
-    total: number;
-    rolls: number[];
-  } | null>(null);
-
   const emitRoll = useCallback(
     (f: string) => {
       if (!socket || f.trim() === "") return;
@@ -30,13 +24,6 @@ export default function DiceRoller({ socket }: DiceRollerProps) {
     e.preventDefault();
     emitRoll(formula);
   };
-
-  if (socket) {
-    socket.off("diceRolled");
-    socket.on("diceRolled", (data: { formula: string; rolls: number[]; total: number }) => {
-      setLastRoll(data);
-    });
-  }
 
   return (
     <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow">
@@ -72,19 +59,6 @@ export default function DiceRoller({ socket }: DiceRollerProps) {
         ))}
       </div>
 
-      {lastRoll && (
-        <div className="mt-3 p-2 bg-slate-900 rounded border border-slate-700 animate-in fade-in">
-          <p className="text-xs text-slate-500">
-            {lastRoll.formula}
-          </p>
-          <p className="text-lg font-black text-amber-400">
-            {lastRoll.total}
-            <span className="text-xs text-slate-500 font-normal ml-2">
-              ({lastRoll.rolls.join(", ")})
-            </span>
-          </p>
-        </div>
-      )}
     </div>
   );
 }
