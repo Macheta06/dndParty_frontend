@@ -8,10 +8,13 @@ import {
   CreateNpcDto,
   CreateNoteDto,
 } from "@/services/game.service";
-import { GameDetail, Note } from "@/types/game";
+import { GameDetail, InitiativeState, Note } from "@/types/game";
 import { Character } from "@/types/character";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import InitiativeTracker from "@/components/InitiativeTracker";
+import DiceRoller from "@/components/DiceRoller";
+import RollHistory from "@/components/RollHistory";
 
 interface HpUpdate {
   characterId: number;
@@ -70,6 +73,8 @@ export default function GameRoomPage({
   const [noteTitle, setNoteTitle] = useState("");
   const [noteDescription, setNoteDescription] = useState("");
 
+  const [activeSocket, setActiveSocket] = useState<Socket | null>(null);
+
   useEffect(() => {
     async function fetchGame() {
       try {
@@ -114,8 +119,31 @@ export default function GameRoomPage({
       );
     });
 
+    socket.on("initiativeUpdated", (state: InitiativeState) => {
+      setGame((prevGame) =>
+        prevGame ? { ...prevGame, initiative: state } : prevGame,
+      );
+    });
+
+    socket.on("turnAdvanced", (state: InitiativeState) => {
+      setGame((prevGame) =>
+        prevGame ? { ...prevGame, initiative: state } : prevGame,
+      );
+    });
+
+    socket.on("initiativeCleared", () => {
+      setGame((prevGame) =>
+        prevGame ? { ...prevGame, initiative: null } : prevGame,
+      );
+    });
+
+    socket.on("connect", () => {
+      setActiveSocket(socket);
+    });
+
     return () => {
       socket.disconnect();
+      setActiveSocket(null);
     };
   }, [gameId]);
 
@@ -364,64 +392,78 @@ export default function GameRoomPage({
             </section>
           </div>
 
-          {/* Columna Derecha (1/3): Panel del Master (Renderizado Condicional) */}
-          {isMaster && (
-            <div className="space-y-4">
-              <div className="bg-slate-800 p-6 rounded-xl border border-purple-500/30 shadow-lg h-fit">
-                <h2 className="text-xl font-bold text-purple-400 mb-6 flex items-center gap-2">
-                  ⚔️ Panel del Master
-                </h2>
+          {/* Columna Derecha (1/3): Iniciativa, Dados y Panel del Master */}
+          <div className="space-y-4">
+            <InitiativeTracker
+              socket={activeSocket}
+              game={game}
+              isMaster={isMaster}
+            />
 
-                <div className="space-y-4">
-                  <button
-                    onClick={() => setIsHpModalOpen(true)}
-                    className="w-full py-2 bg-slate-900 border border-slate-700 hover:border-purple-500 text-slate-300 rounded transition-colors text-sm"
-                  >
-                    + Modificar HP de Personaje
-                  </button>
-                  <button
-                    onClick={() => setIsNpcModalOpen(true)}
-                    className="w-full py-2 bg-slate-900 border border-slate-700 hover:border-purple-500 text-slate-300 rounded transition-colors text-sm"
-                  >
-                    + Crear Enemigo (NPC)
-                  </button>
-                  <button
-                    onClick={() => setIsNoteModalOpen(true)}
-                    className="w-full py-2 bg-slate-900 border border-slate-700 hover:border-purple-500 text-slate-300 rounded transition-colors text-sm"
-                  >
-                    + Añadir Nota Oculta
-                  </button>
-                </div>
-              </div>
+            <DiceRoller
+              socket={activeSocket}
+            />
 
-              <div className="bg-slate-800 p-6 rounded-xl border border-purple-500/30 shadow-lg h-fit">
-                <h2 className="text-xl font-bold text-purple-400 mb-4">
-                  📜 Notas del Master
-                </h2>
-                {game.notes && game.notes.length > 0 ? (
-                  <div className="space-y-3 max-h-64 overflow-y-auto">
-                    {game.notes.map((note) => (
-                      <div
-                        key={note.id}
-                        className="bg-slate-900 border border-slate-700 rounded p-3"
-                      >
-                        <h3 className="font-bold text-slate-200 text-sm">
-                          {note.title}
-                        </h3>
-                        <p className="text-xs text-slate-400 mt-1 whitespace-pre-wrap">
-                          {note.description}
-                        </p>
-                      </div>
-                    ))}
+            <RollHistory socket={activeSocket} />
+
+            {isMaster && (
+              <>
+                <div className="bg-slate-800 p-6 rounded-xl border border-purple-500/30 shadow-lg h-fit">
+                  <h2 className="text-xl font-bold text-purple-400 mb-6 flex items-center gap-2">
+                    Panel del Master
+                  </h2>
+
+                  <div className="space-y-4">
+                    <button
+                      onClick={() => setIsHpModalOpen(true)}
+                      className="w-full py-2 bg-slate-900 border border-slate-700 hover:border-purple-500 text-slate-300 rounded transition-colors text-sm"
+                    >
+                      + Modificar HP de Personaje
+                    </button>
+                    <button
+                      onClick={() => setIsNpcModalOpen(true)}
+                      className="w-full py-2 bg-slate-900 border border-slate-700 hover:border-purple-500 text-slate-300 rounded transition-colors text-sm"
+                    >
+                      + Crear Enemigo (NPC)
+                    </button>
+                    <button
+                      onClick={() => setIsNoteModalOpen(true)}
+                      className="w-full py-2 bg-slate-900 border border-slate-700 hover:border-purple-500 text-slate-300 rounded transition-colors text-sm"
+                    >
+                      + Añadir Nota Oculta
+                    </button>
                   </div>
-                ) : (
-                  <p className="text-slate-500 italic text-sm">
-                    No hay notas ocultas todavía.
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
+                </div>
+
+                <div className="bg-slate-800 p-6 rounded-xl border border-purple-500/30 shadow-lg h-fit">
+                  <h2 className="text-xl font-bold text-purple-400 mb-4">
+                    Notas del Master
+                  </h2>
+                  {game.notes && game.notes.length > 0 ? (
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      {game.notes.map((note) => (
+                        <div
+                          key={note.id}
+                          className="bg-slate-900 border border-slate-700 rounded p-3"
+                        >
+                          <h3 className="font-bold text-slate-200 text-sm">
+                            {note.title}
+                          </h3>
+                          <p className="text-xs text-slate-400 mt-1 whitespace-pre-wrap">
+                            {note.description}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-slate-500 italic text-sm">
+                      No hay notas ocultas todavía.
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
       {/* MODAL PARA MODIFICAR HP */}
