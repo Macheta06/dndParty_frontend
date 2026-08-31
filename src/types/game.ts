@@ -18,3 +18,9 @@ export interface GameDetail extends Game {
   npcs: Character[];
   notes?: Note[];
 }
+
+export interface JoinGameResponse {
+  id: number;
+  name: string;
+  game: { id: string; name: string; master: { name: string } };
+}

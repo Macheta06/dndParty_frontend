@@ -47,11 +47,11 @@ export default function JoinGamePage() {
     setSubmitting(true);
 
     try {
-      await gameService.joinGame({
+      const result = await gameService.joinGame({
         joinCode: joinCode.trim().toUpperCase(),
         characterId: Number(selectedCharacterId),
       });
-      router.push("/dashboard");
+      router.push(`/games/${result.game.id}`);
     } catch (err: unknown) {
       let errorMessage = "Error al unirse a la sala";
       if (axios.isAxiosError(err)) {

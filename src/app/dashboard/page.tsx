@@ -156,9 +156,12 @@ export default function DashboardPage() {
                     </p>
                   </div>
                   {char.game ? (
-                    <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded">
-                      En: {char.game.name}
-                    </span>
+                    <Link
+                      href={`/games/${char.game.id}`}
+                      className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded hover:bg-emerald-500/20 transition-colors"
+                    >
+                      Entrar a: {char.game.name}
+                    </Link>
                   ) : (
                     <span className="text-xs bg-slate-800 text-slate-400 px-2.5 py-1 rounded border border-slate-700">
                       Sin Partida

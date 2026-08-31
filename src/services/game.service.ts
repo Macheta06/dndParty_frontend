@@ -1,5 +1,5 @@
 import { api } from "./api";
-import { Game, GameDetail, Note } from "@/types/game";
+import { Game, GameDetail, JoinGameResponse, Note } from "@/types/game";
 import { Character } from "@/types/character";
 
 export interface CreateGameDto {
@@ -36,8 +36,8 @@ export const gameService = {
     return data;
   },
 
-  async joinGame(joinData: JoinGameDto): Promise<Game> {
-    const { data } = await api.post<Game>("/games/join", joinData);
+  async joinGame(joinData: JoinGameDto): Promise<JoinGameResponse> {
+    const { data } = await api.post<JoinGameResponse>("/games/join", joinData);
     return data;
   },
   async leaveGame(gameId: string) {
