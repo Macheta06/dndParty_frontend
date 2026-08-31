@@ -32,4 +32,24 @@ export const characterService = {
     const { data } = await api.post<Character>("/characters", characterData);
     return data;
   },
+
+  async getCharacterById(id: number): Promise<Character> {
+    const { data } = await api.get<Character>(`/characters/${id}`);
+    return data;
+  },
+
+  async updateCharacter(
+    id: number,
+    characterData: Partial<Character>,
+  ): Promise<Character> {
+    const { data } = await api.patch<Character>(
+      `/characters/${id}`,
+      characterData,
+    );
+    return data;
+  },
+
+  async deleteCharacter(id: number): Promise<void> {
+    await api.delete(`/characters/${id}`);
+  },
 };

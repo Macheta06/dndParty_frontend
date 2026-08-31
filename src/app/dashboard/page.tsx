@@ -147,7 +147,12 @@ export default function DashboardPage() {
                   className="p-4 bg-slate-900/60 rounded-lg border border-slate-700/50 flex justify-between items-center hover:border-amber-500/50 transition-colors"
                 >
                   <div>
-                    <p className="font-semibold text-slate-200">{char.name}</p>
+                    <Link
+                      href={`/characters/${char.id}`}
+                      className="font-semibold text-slate-200 hover:text-amber-400 transition-colors"
+                    >
+                      {char.name}
+                    </Link>
                     <p className="text-xs text-slate-400 mt-0.5">
                       {char.race} {char.class} — Nivel {char.level}
                     </p>
@@ -155,18 +160,26 @@ export default function DashboardPage() {
                       Vida: {char.current_hp} / {char.max_hp} HP
                     </p>
                   </div>
-                  {char.game ? (
+                  <div className="flex items-center gap-2">
                     <Link
-                      href={`/games/${char.game.id}`}
-                      className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded hover:bg-emerald-500/20 transition-colors"
+                      href={`/characters/${char.id}`}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 rounded text-xs transition-colors"
                     >
-                      Entrar a: {char.game.name}
+                      Ver Ficha
                     </Link>
-                  ) : (
-                    <span className="text-xs bg-slate-800 text-slate-400 px-2.5 py-1 rounded border border-slate-700">
-                      Sin Partida
-                    </span>
-                  )}
+                    {char.game ? (
+                      <Link
+                        href={`/games/${char.game.id}`}
+                        className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded text-xs transition-colors"
+                      >
+                        Entrar a: {char.game.name}
+                      </Link>
+                    ) : (
+                      <span className="text-xs bg-slate-800 text-slate-400 px-2.5 py-1 rounded border border-slate-700">
+                        Sin Partida
+                      </span>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>

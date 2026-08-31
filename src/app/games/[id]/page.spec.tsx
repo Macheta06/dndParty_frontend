@@ -46,7 +46,35 @@ vi.mock('@/context/AuthContext', () => ({
   useAuth: () => ({ user: authUser.user }),
 }));
 
+const baseCharacterFields = {
+  is_npc: false,
+  alignment: 'Neutral',
+  background: 'Acolyte',
+  exp: 0,
+  proficiency: 2,
+  inspiration: 0,
+  strength: 10,
+  dexterity: 10,
+  constitution: 10,
+  intelligence: 10,
+  wisdom: 10,
+  charisma: 10,
+  armor: 10,
+  initiative: 0,
+  speed: 30,
+  temporary_hp: 0,
+  hitDice: '1d8',
+  gold_coins: 0,
+  silver_coins: 0,
+  copper_coins: 0,
+  equipment: [] as unknown[],
+  proficiencies: [] as unknown[],
+  spells: [] as unknown[],
+  userId: 1,
+};
+
 const playerFixture: Character = {
+  ...baseCharacterFields,
   id: 1,
   name: 'Aria',
   class: 'Rogue',
@@ -57,6 +85,7 @@ const playerFixture: Character = {
 };
 
 const npcFixture: Character = {
+  ...baseCharacterFields,
   id: 2,
   name: 'Goblin',
   class: 'Enemigo',
@@ -64,9 +93,11 @@ const npcFixture: Character = {
   level: 1,
   current_hp: 5,
   max_hp: 7,
+  is_npc: true,
 };
 
 const newNpcFixture: Character = {
+  ...baseCharacterFields,
   id: 3,
   name: 'Orco',
   class: 'Enemigo',
@@ -74,6 +105,7 @@ const newNpcFixture: Character = {
   level: 1,
   current_hp: 12,
   max_hp: 12,
+  is_npc: true,
 };
 
 const noteFixture: Note = {

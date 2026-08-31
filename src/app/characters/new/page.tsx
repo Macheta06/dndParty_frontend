@@ -50,8 +50,8 @@ export default function NewCharacterPage() {
     setLoading(true);
 
     try {
-      await characterService.createCharacter(formData);
-      router.push("/dashboard");
+      const created = await characterService.createCharacter(formData);
+      router.push(`/characters/${created.id}`);
     } catch (err: unknown) {
       let errorMessage = "Error al forjar tu personaje";
       if (axios.isAxiosError(err)) {
