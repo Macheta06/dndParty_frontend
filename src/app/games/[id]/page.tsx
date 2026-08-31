@@ -85,9 +85,22 @@ export default function GameRoomPage({
   }, [gameId, user]);
 
   useEffect(() => {
+    const token =
+      typeof window !== "undefined" ? localStorage.getItem("token") : null;
     const socket: Socket = io(
       process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000",
+      { auth: { token: token ?? undefined } },
     );
+
+    socket.on("connect_error", (err) => {
+      console.error("Error de conexión WebSocket:", err.message);
+      setError("Error de conexión con la sala de juego.");
+    });
+
+    socket.on("error", (data: { message: string }) => {
+      console.error("Error del servidor:", data.message);
+      setError(data.message);
+    });
 
     socket.emit("joinGameRoom", gameId);
 
