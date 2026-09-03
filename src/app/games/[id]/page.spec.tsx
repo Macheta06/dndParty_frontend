@@ -112,6 +112,7 @@ const noteFixture: Note = {
   id: 1,
   title: 'Secreto de la cueva',
   description: 'Tesoro detrás de la puerta',
+  is_public: false,
   gameId: 'game-1',
 };
 
@@ -299,12 +300,13 @@ describe('GameRoomPage', () => {
   });
 
   describe('Note modal', () => {
-    it('submits the note and appends it to the notes list', async () => {
+    it('submits the note and appends it to the notes list via socket', async () => {
       const user = userEvent.setup();
       const createdNote: Note = {
         id: 2,
         title: 'Mapa del tesoro',
         description: 'Enterrado bajo el roble.',
+        is_public: false,
         gameId: 'game-1',
       };
       vi.mocked(gameService.createNote).mockResolvedValue(createdNote);
@@ -325,8 +327,15 @@ describe('GameRoomPage', () => {
         expect(gameService.createNote).toHaveBeenCalledWith('game-1', {
           title: 'Mapa del tesoro',
           description: 'Enterrado bajo el roble.',
+          is_public: false,
         }),
       );
+
+      // Simulate socket event (note arrives via realtime, not REST)
+      act(() => {
+        getSocketHandler('noteCreated')(createdNote);
+      });
+
       expect(await screen.findByText('Mapa del tesoro')).toBeInTheDocument();
       expect(screen.getAllByText('Mapa del tesoro')).toHaveLength(1);
     });

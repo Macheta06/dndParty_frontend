@@ -20,6 +20,8 @@ import { useRouter } from "next/navigation";
 import InitiativeTracker from "@/components/InitiativeTracker";
 import DiceRoller from "@/components/DiceRoller";
 import RollHistory from "@/components/RollHistory";
+import Chat from "@/components/Chat";
+import Equipment from "@/components/Equipment";
 
 interface HpUpdate {
   characterId: number;
@@ -77,6 +79,14 @@ export default function GameRoomPage({
   const [isCreatingNote, setIsCreatingNote] = useState(false);
   const [noteTitle, setNoteTitle] = useState("");
   const [noteDescription, setNoteDescription] = useState("");
+  const [noteIsPublic, setNoteIsPublic] = useState(false);
+
+  const [isXpModalOpen, setIsXpModalOpen] = useState(false);
+  const [xpAmount, setXpAmount] = useState<number | "">("");
+  const [xpTargetId, setXpTargetId] = useState<number | "all">("all");
+  const [isGrantingXp, setIsGrantingXp] = useState(false);
+
+  const [connectedPlayerIds, setConnectedPlayerIds] = useState<Set<number>>(new Set());
 
   const [activeSocket, setActiveSocket] = useState<Socket | null>(null);
   const [rollHistory, setRollHistory] = useState<DiceRollResult[]>([]);
@@ -146,6 +156,83 @@ export default function GameRoomPage({
     socket.on("diceRolled", (roll: DiceRollResult) => {
       setRollHistory((previous) => [...previous, roll].slice(-10));
     });
+
+    socket.on("xpGranted", (data: { characterId: number; exp: number }) => {
+      setGame((prevGame) =>
+        prevGame
+          ? {
+              ...prevGame,
+              characters: prevGame.characters.map((c) =>
+                c.id === data.characterId ? { ...c, exp: data.exp } : c,
+              ),
+            }
+          : prevGame,
+      );
+    });
+
+    socket.on(
+      "xpGrantedBulk",
+      (data: { xp: number; characters: Array<{ id: number; exp: number }> }) => {
+        setGame((prevGame) =>
+          prevGame
+            ? {
+                ...prevGame,
+                characters: prevGame.characters.map((c) => {
+                  const updated = data.characters.find((u) => u.id === c.id);
+                  return updated ? { ...c, exp: updated.exp } : c;
+                }),
+              }
+            : prevGame,
+        );
+      },
+    );
+
+    socket.on("playerOnline", (data: { userId: number }) => {
+      setConnectedPlayerIds((prev) => new Set(prev).add(data.userId));
+    });
+
+    socket.on("playerOffline", (data: { userId: number }) => {
+      setConnectedPlayerIds((prev) => {
+        const next = new Set(prev);
+        next.delete(data.userId);
+        return next;
+      });
+    });
+
+    socket.on("roomUsers", (userIds: number[]) => {
+      setConnectedPlayerIds(new Set(userIds));
+    });
+
+    socket.on("noteCreated", (note: Note) => {
+      setGame((prevGame) =>
+        prevGame
+          ? { ...prevGame, notes: [...(prevGame.notes ?? []), note] }
+          : prevGame,
+      );
+    });
+
+    socket.on(
+      "equipmentUpdated",
+      (data: { characterId: number; equipment: unknown[] }) => {
+        setGame((prevGame) =>
+          prevGame
+            ? {
+                ...prevGame,
+                characters: prevGame.characters.map((c) =>
+                  c.id === data.characterId
+                    ? { ...c, equipment: data.equipment }
+                    : c,
+                ),
+                npcs: prevGame.npcs.map((npc) =>
+                  npc.id === data.characterId
+                    ? { ...npc, equipment: data.equipment }
+                    : npc,
+                ),
+              }
+            : prevGame,
+        );
+      },
+    );
 
     socket.on("connect", () => {
       setActiveSocket(socket);
@@ -237,24 +324,47 @@ export default function GameRoomPage({
     const noteData: CreateNoteDto = {
       title: noteTitle.trim(),
       description: noteDescription.trim(),
+      is_public: noteIsPublic,
     };
 
     setIsCreatingNote(true);
     try {
-      const note: Note = await gameService.createNote(gameId, noteData);
-      setGame((prevGame) =>
-        prevGame
-          ? { ...prevGame, notes: [...(prevGame.notes ?? []), note] }
-          : prevGame,
-      );
+      await gameService.createNote(gameId, noteData);
+      // Note is added to state via socket 'noteCreated' event (dedup-safe)
       setIsNoteModalOpen(false);
       setNoteTitle("");
       setNoteDescription("");
+      setNoteIsPublic(false);
     } catch (err) {
       console.error("Error creando la nota:", err);
       alert("Hubo un error al crear la nota.");
     } finally {
       setIsCreatingNote(false);
+    }
+  };
+
+  const handleGrantXp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (xpAmount === "" || xpAmount <= 0) return;
+
+    setIsGrantingXp(true);
+    try {
+      const payload: { xp: number; characterId?: number } = {
+        xp: Number(xpAmount),
+      };
+      if (xpTargetId !== "all") {
+        payload.characterId = Number(xpTargetId);
+      }
+      activeSocket?.emit("grantXp", { gameId, ...payload });
+
+      setIsXpModalOpen(false);
+      setXpAmount("");
+      setXpTargetId("all");
+    } catch (err) {
+      console.error("Error otorgando XP:", err);
+      alert("Hubo un error al otorgar XP.");
+    } finally {
+      setIsGrantingXp(false);
     }
   };
 
@@ -331,31 +441,48 @@ export default function GameRoomPage({
                   No hay héroes en esta partida todavía.
                 </p>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-4">
                   {game.characters.map((char) => (
                     <div
                       key={char.id}
-                      className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow flex justify-between items-center"
+                      className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow"
                     >
-                      <div>
-                        <h3 className="font-bold text-lg text-slate-200">
-                          {char.name}
-                        </h3>
-                        <p className="text-xs text-slate-400">
-                          {char.race} {char.class} - Lvl {char.level}
-                        </p>
+                      <div className="flex justify-between items-center mb-3">
+                        <div>
+                          <h3 className="font-bold text-lg text-slate-200 flex items-center gap-2">
+                            {char.name}
+                            <span
+                              className={`w-2 h-2 rounded-full ${connectedPlayerIds.has(char.userId) ? "bg-emerald-400" : "bg-slate-600"}`}
+                              title={
+                                connectedPlayerIds.has(char.userId)
+                                  ? "Conectado"
+                                  : "Desconectado"
+                              }
+                            />
+                          </h3>
+                          <p className="text-xs text-slate-400">
+                            {char.race} {char.class} - Lvl {char.level}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-slate-300">HP</p>
+                          <p
+                            className={`text-xl font-black ${char.current_hp <= char.max_hp / 4 ? "text-red-500" : "text-emerald-400"}`}
+                          >
+                            {char.current_hp}{" "}
+                            <span className="text-sm text-slate-500 font-normal">
+                              / {char.max_hp}
+                            </span>
+                          </p>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold text-slate-300">HP</p>
-                        <p
-                          className={`text-xl font-black ${char.current_hp <= char.max_hp / 4 ? "text-red-500" : "text-emerald-400"}`}
-                        >
-                          {char.current_hp}{" "}
-                          <span className="text-sm text-slate-500 font-normal">
-                            / {char.max_hp}
-                          </span>
-                        </p>
-                      </div>
+                      <Equipment
+                        socket={activeSocket}
+                        gameId={gameId}
+                        characterId={char.id}
+                        equipment={char.equipment}
+                        isOwner={user?.id === char.userId || isMaster}
+                      />
                     </div>
                   ))}
                 </div>
@@ -414,6 +541,35 @@ export default function GameRoomPage({
 
             <RollHistory history={rollHistory} />
 
+            <Chat socket={activeSocket} gameId={gameId} />
+
+            {!isMaster &&
+              game.notes &&
+              game.notes.some((n) => n.is_public) && (
+                <div className="bg-slate-800 p-6 rounded-xl border border-amber-500/30 shadow-lg h-fit">
+                  <h2 className="text-xl font-bold text-amber-400 mb-4">
+                    Notas Públicas
+                  </h2>
+                  <div className="space-y-3 max-h-64 overflow-y-auto">
+                    {game.notes
+                      .filter((n) => n.is_public)
+                      .map((note) => (
+                        <div
+                          key={note.id}
+                          className="bg-slate-900 border border-slate-700 rounded p-3"
+                        >
+                          <h3 className="font-bold text-slate-200 text-sm">
+                            {note.title}
+                          </h3>
+                          <p className="text-xs text-slate-400 mt-1 whitespace-pre-wrap">
+                            {note.description}
+                          </p>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
             {isMaster && (
               <>
                 <div className="bg-slate-800 p-6 rounded-xl border border-purple-500/30 shadow-lg h-fit">
@@ -440,6 +596,12 @@ export default function GameRoomPage({
                     >
                       + Añadir Nota Oculta
                     </button>
+                    <button
+                      onClick={() => setIsXpModalOpen(true)}
+                      className="w-full py-2 bg-slate-900 border border-slate-700 hover:border-amber-500 text-slate-300 rounded transition-colors text-sm"
+                    >
+                      + Otorgar XP
+                    </button>
                   </div>
                 </div>
 
@@ -454,8 +616,13 @@ export default function GameRoomPage({
                           key={note.id}
                           className="bg-slate-900 border border-slate-700 rounded p-3"
                         >
-                          <h3 className="font-bold text-slate-200 text-sm">
+                          <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
                             {note.title}
+                            {note.is_public && (
+                              <span className="text-xs px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded border border-amber-500/30">
+                                Pública
+                              </span>
+                            )}
                           </h3>
                           <p className="text-xs text-slate-400 mt-1 whitespace-pre-wrap">
                             {note.description}
@@ -707,6 +874,19 @@ export default function GameRoomPage({
                 />
               </div>
 
+              <div className="flex items-center gap-3">
+                <input
+                  id="note-is-public"
+                  type="checkbox"
+                  checked={noteIsPublic}
+                  onChange={(e) => setNoteIsPublic(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-amber-500"
+                />
+                <label htmlFor="note-is-public" className="text-sm text-slate-300">
+                  Nota pública (visible para todos los jugadores)
+                </label>
+              </div>
+
               <div className="flex gap-3 mt-6">
                 <button
                   type="button"
@@ -725,6 +905,74 @@ export default function GameRoomPage({
                   className="flex-1 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded transition-colors disabled:opacity-50"
                 >
                   {isCreatingNote ? "Guardando..." : "Guardar Nota"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PARA OTORGAR XP */}
+      {isXpModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 border border-amber-500/50 p-6 rounded-xl w-full max-w-md shadow-2xl">
+            <h3 className="text-xl font-bold text-amber-400 mb-4">
+              Otorgar Puntos de Experiencia
+            </h3>
+
+            <form onSubmit={handleGrantXp} className="space-y-4">
+              <div>
+                <label htmlFor="xp-amount" className="block text-sm text-slate-300 mb-1">
+                  Cantidad de XP
+                </label>
+                <input
+                  id="xp-amount"
+                  type="number"
+                  required
+                  min={1}
+                  value={xpAmount}
+                  onChange={(e) =>
+                    setXpAmount(e.target.value === "" ? "" : Number(e.target.value))
+                  }
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded focus:border-amber-500 text-slate-100"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="xp-target" className="block text-sm text-slate-300 mb-1">
+                  Destino
+                </label>
+                <select
+                  id="xp-target"
+                  value={xpTargetId}
+                  onChange={(e) =>
+                    setXpTargetId(e.target.value === "all" ? "all" : Number(e.target.value))
+                  }
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded focus:border-amber-500 text-slate-100"
+                >
+                  <option value="all">Todos los personajes</option>
+                  {game.characters.map((char) => (
+                    <option key={char.id} value={char.id}>
+                      {char.name} (XP: {char.exp})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setIsXpModalOpen(false)}
+                  className="flex-1 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isGrantingXp || xpAmount === "" || xpAmount <= 0}
+                  className="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded transition-colors disabled:opacity-50"
+                >
+                  {isGrantingXp ? "Otorgando..." : "Otorgar XP"}
                 </button>
               </div>
             </form>

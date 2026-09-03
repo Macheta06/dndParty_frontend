@@ -1,5 +1,5 @@
 import { api } from "./api";
-import { Game, GameDetail, JoinGameResponse, Note } from "@/types/game";
+import { Game, GameDetail, JoinGameResponse, Note, ChatMessage } from "@/types/game";
 import { Character } from "@/types/character";
 
 export interface CreateGameDto {
@@ -23,6 +23,7 @@ export interface CreateNpcDto {
 export interface CreateNoteDto {
   title: string;
   description: string;
+  is_public?: boolean;
 }
 
 export const gameService = {
@@ -68,6 +69,10 @@ export const gameService = {
   },
   async createNote(gameId: string, noteData: CreateNoteDto): Promise<Note> {
     const { data } = await api.post<Note>(`/games/${gameId}/notes`, noteData);
+    return data;
+  },
+  async getChatMessages(gameId: string): Promise<ChatMessage[]> {
+    const { data } = await api.get<ChatMessage[]>(`/games/${gameId}/chat`);
     return data;
   },
 };

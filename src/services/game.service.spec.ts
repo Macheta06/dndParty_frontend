@@ -63,6 +63,7 @@ const noteFixture: Note = {
   id: 1,
   title: 'Secreto',
   description: 'Tesoro detrás de la puerta',
+  is_public: false,
   gameId: 'game-1',
 };
 

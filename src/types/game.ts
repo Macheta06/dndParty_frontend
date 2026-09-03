@@ -11,6 +11,7 @@ export interface Note {
   id: number;
   title: string;
   description: string;
+  is_public: boolean;
   gameId: string;
 }
 
@@ -46,4 +47,12 @@ export interface JoinGameResponse {
   id: number;
   name: string;
   game: { id: string; name: string; master: { name: string } };
+}
+
+export interface ChatMessage {
+  id: number;
+  content: string;
+  createdAt: string;
+  senderId: number;
+  sender: { id: number; name: string };
 }
