@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 
-export default function Home() {
+export default function NotFound() {
   const { user, loading } = useAuth();
   const router = useRouter();
 
@@ -23,7 +23,7 @@ export default function Home() {
       <div className="text-center space-y-3">
         <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
         <p className="text-amber-500 font-semibold text-sm animate-pulse">
-          Cargando D&D Party Manager...
+          Página no encontrada. Redirigiendo a tu sesión...
         </p>
       </div>
     </div>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { characterService } from "@/services/character.service";
 import { gameService } from "@/services/game.service";
@@ -10,12 +11,18 @@ import { Game } from "@/types/game";
 
 export default function DashboardPage() {
   const { user, logout } = useAuth();
+  const router = useRouter();
 
   const [characters, setCharacters] = useState<Character[]>([]);
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
+
     async function loadDashboardData() {
       try {
         const [userCharacters, userGames] = await Promise.all([
@@ -31,10 +38,8 @@ export default function DashboardPage() {
       }
     }
 
-    if (user) {
-      loadDashboardData();
-    }
-  }, [user]);
+    loadDashboardData();
+  }, [user, router]);
 
   const handleDeleteCharacter = async (id: number, name: string) => {
     if (
