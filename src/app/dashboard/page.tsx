@@ -36,6 +36,24 @@ export default function DashboardPage() {
     }
   }, [user]);
 
+  const handleDeleteCharacter = async (id: number, name: string) => {
+    if (
+      !window.confirm(
+        `¿Estás seguro de que deseas eliminar permanentemente a "${name}"?`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await characterService.deleteCharacterPermanent(id);
+      setCharacters((prev) => prev.filter((c) => c.id !== id));
+    } catch (err) {
+      console.error("Error al eliminar personaje:", err);
+      alert("Error al eliminar personaje");
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center">
@@ -179,6 +197,13 @@ export default function DashboardPage() {
                         Sin Partida
                       </span>
                     )}
+                    <button
+                      onClick={() => handleDeleteCharacter(char.id, char.name)}
+                      className="px-2.5 py-1.5 bg-red-950/40 hover:bg-red-900/60 text-red-400 border border-red-800/50 rounded text-xs font-semibold transition-colors"
+                      title="Eliminar personaje permanentemente"
+                    >
+                      🗑️
+                    </button>
                   </div>
                 </li>
               ))}

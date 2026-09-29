@@ -5,6 +5,23 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { characterService } from "@/services/character.service";
 import { Character } from "@/types/character";
+import {
+  DND_CLASSES,
+  DND_RACES,
+  DND_BACKGROUNDS,
+  DND_ALIGNMENTS,
+  DND_SKILLS,
+  getClassLabel,
+  getRaceLabel,
+  getBackgroundLabel,
+  getAlignmentLabel,
+  getProficiencyBonus,
+  getStartingProficiencies,
+  getProficiencySource,
+  getStartingFeats,
+  EquipmentItem,
+  FeatItem,
+} from "@/constants/dnd";
 import axios from "axios";
 
 const STAT_LABELS: Record<string, string> = {
@@ -14,6 +31,15 @@ const STAT_LABELS: Record<string, string> = {
   intelligence: "INT",
   wisdom: "SAB",
   charisma: "CAR",
+};
+
+const STAT_NAMES_FULL: Record<string, string> = {
+  strength: "Fuerza",
+  dexterity: "Destreza",
+  constitution: "Constitución",
+  intelligence: "Inteligencia",
+  wisdom: "Sabiduría",
+  charisma: "Carisma",
 };
 
 const STAT_KEYS = [
@@ -50,6 +76,23 @@ export default function CharacterDetailPage() {
   const [editData, setEditData] = useState<Partial<Character>>({});
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Controles interactivos de Economía y Vida en vivo
+  const [editingCoin, setEditingCoin] = useState<
+    "gold_coins" | "silver_coins" | "copper_coins" | null
+  >(null);
+  const [coinInputValue, setCoinInputValue] = useState<string>("");
+
+  // Controles interactivos de Equipamiento y Dotes
+  const [isAddingEquip, setIsAddingEquip] = useState(false);
+  const [newEquipName, setNewEquipName] = useState("");
+  const [newEquipQty, setNewEquipQty] = useState(1);
+  const [newEquipDesc, setNewEquipDesc] = useState("");
+
+  const [isAddingFeat, setIsAddingFeat] = useState(false);
+  const [newFeatName, setNewFeatName] = useState("");
+  const [newFeatCategory, setNewFeatCategory] = useState("Dote de Origen");
+  const [newFeatDesc, setNewFeatDesc] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -103,15 +146,6 @@ export default function CharacterDetailPage() {
     setEditData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleJsonFieldChange = (field: keyof Character, raw: string) => {
-    try {
-      const parsed = JSON.parse(raw);
-      setEditData((prev) => ({ ...prev, [field]: parsed }));
-    } catch {
-      // keep the raw string while typing; save will parse it
-    }
-  };
-
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -138,7 +172,11 @@ export default function CharacterDetailPage() {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm("¿Estás seguro de que quieres desactivar este personaje?")) {
+    if (
+      !window.confirm(
+        "¿Estás seguro de que quieres desactivar este personaje?",
+      )
+    ) {
       return;
     }
     setDeleting(true);
@@ -146,7 +184,7 @@ export default function CharacterDetailPage() {
       await characterService.deleteCharacter(id);
       router.push("/dashboard");
     } catch (err: unknown) {
-      let msg = "Error al desactivar el personaje";
+      let msg = "Error al eliminar personaje";
       if (axios.isAxiosError(err)) {
         const resp = err.response?.data as
           | { message?: string | string[] }
@@ -160,6 +198,191 @@ export default function CharacterDetailPage() {
       setError(msg);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  // Handlers para interactividad rápida de monedas
+  const handleQuickCoinUpdate = async (
+    coinField: "gold_coins" | "silver_coins" | "copper_coins",
+    delta: number,
+  ) => {
+    if (!character) return;
+    const currentVal = Number(character[coinField] ?? 0);
+    const newVal = Math.max(0, currentVal + delta);
+
+    setCharacter((prev) => (prev ? { ...prev, [coinField]: newVal } : null));
+
+    try {
+      await characterService.updateCharacter(id, { [coinField]: newVal });
+    } catch {
+      setCharacter((prev) => (prev ? { ...prev, [coinField]: currentVal } : null));
+      setError("Error al guardar monedas");
+    }
+  };
+
+  const handleSaveDirectCoin = async (
+    coinField: "gold_coins" | "silver_coins" | "copper_coins",
+    valStr: string,
+  ) => {
+    if (!character) return;
+    const parsed = parseInt(valStr, 10);
+    const newVal = isNaN(parsed) ? 0 : Math.max(0, parsed);
+    const currentVal = Number(character[coinField] ?? 0);
+
+    setEditingCoin(null);
+    setCharacter((prev) => (prev ? { ...prev, [coinField]: newVal } : null));
+
+    try {
+      await characterService.updateCharacter(id, { [coinField]: newVal });
+    } catch {
+      setCharacter((prev) => (prev ? { ...prev, [coinField]: currentVal } : null));
+      setError("Error al guardar monedas");
+    }
+  };
+
+  // Handler para ajuste rápido de Puntos de Vida (Daño / Curación)
+  const handleQuickHpUpdate = async (delta: number) => {
+    if (!character) return;
+    const currentHp = Number(character.current_hp ?? 0);
+    const maxHp = Number(character.max_hp ?? 1);
+    const newHp = Math.max(0, Math.min(maxHp, currentHp + delta));
+
+    setCharacter((prev) => (prev ? { ...prev, current_hp: newHp } : null));
+
+    try {
+      await characterService.updateCharacter(id, { current_hp: newHp });
+    } catch {
+      setCharacter((prev) => (prev ? { ...prev, current_hp: currentHp } : null));
+      setError("Error al actualizar puntos de vida");
+    }
+  };
+
+  // Handler para conmutar competencia de habilidad
+  const handleToggleProficiency = async (skillName: string) => {
+    if (!character) return;
+    const currentProfs = (character.proficiencies as string[]) || [];
+    const isProf = currentProfs.includes(skillName);
+    const updated = isProf
+      ? currentProfs.filter((s) => s !== skillName)
+      : [...currentProfs, skillName];
+
+    setCharacter((prev) => (prev ? { ...prev, proficiencies: updated } : null));
+
+    try {
+      await characterService.updateCharacter(id, { proficiencies: updated });
+    } catch {
+      setCharacter((prev) => (prev ? { ...prev, proficiencies: currentProfs } : null));
+      setError("Error al actualizar la competencia");
+    }
+  };
+
+  // Handlers para Inventario interactivo
+  const handleUpdateItemQty = async (itemName: string, delta: number) => {
+    if (!character) return;
+    const currentEquip = (character.equipment as EquipmentItem[]) || [];
+    const updated = currentEquip
+      .map((item) => {
+        if (item.name === itemName) {
+          const newQty = item.quantity + delta;
+          return newQty > 0 ? { ...item, quantity: newQty } : null;
+        }
+        return item;
+      })
+      .filter(Boolean) as EquipmentItem[];
+
+    setCharacter((prev) => (prev ? { ...prev, equipment: updated } : null));
+
+    try {
+      await characterService.updateCharacter(id, { equipment: updated });
+    } catch {
+      setCharacter((prev) => (prev ? { ...prev, equipment: currentEquip } : null));
+      setError("Error al actualizar inventario");
+    }
+  };
+
+  const handleAddEquipmentItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!character || !newEquipName.trim()) return;
+
+    const currentEquip = (character.equipment as EquipmentItem[]) || [];
+    const existingIndex = currentEquip.findIndex(
+      (i) => i.name.toLowerCase() === newEquipName.trim().toLowerCase(),
+    );
+
+    let updated: EquipmentItem[];
+    if (existingIndex >= 0) {
+      updated = currentEquip.map((item, idx) =>
+        idx === existingIndex
+          ? { ...item, quantity: item.quantity + newEquipQty }
+          : item,
+      );
+    } else {
+      updated = [
+        ...currentEquip,
+        {
+          name: newEquipName.trim(),
+          quantity: Math.max(1, newEquipQty),
+          description: newEquipDesc.trim() || undefined,
+        },
+      ];
+    }
+
+    setNewEquipName("");
+    setNewEquipQty(1);
+    setNewEquipDesc("");
+    setIsAddingEquip(false);
+
+    setCharacter((prev) => (prev ? { ...prev, equipment: updated } : null));
+
+    try {
+      await characterService.updateCharacter(id, { equipment: updated });
+    } catch {
+      setCharacter((prev) => (prev ? { ...prev, equipment: currentEquip } : null));
+      setError("Error al agregar objeto");
+    }
+  };
+
+  const handleRemoveFeat = async (featName: string) => {
+    if (!character) return;
+    const currentFeats = (character.feature_traits as FeatItem[]) || [];
+    const updated = currentFeats.filter((f) => f.name !== featName);
+
+    setCharacter((prev) => (prev ? { ...prev, feature_traits: updated } : null));
+
+    try {
+      await characterService.updateCharacter(id, { feature_traits: updated });
+    } catch {
+      setCharacter((prev) => (prev ? { ...prev, feature_traits: currentFeats } : null));
+      setError("Error al quitar rasgo");
+    }
+  };
+
+  const handleAddFeat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!character || !newFeatName.trim()) return;
+
+    const currentFeats = (character.feature_traits as FeatItem[]) || [];
+    const updated = [
+      ...currentFeats,
+      {
+        name: newFeatName.trim(),
+        category: newFeatCategory.trim() || "Dote",
+        description: newFeatDesc.trim(),
+      },
+    ];
+
+    setNewFeatName("");
+    setNewFeatCategory("Dote de Origen");
+    setNewFeatDesc("");
+    setIsAddingFeat(false);
+
+    setCharacter((prev) => (prev ? { ...prev, feature_traits: updated } : null));
+
+    try {
+      await characterService.updateCharacter(id, { feature_traits: updated });
+    } catch {
+      setCharacter((prev) => (prev ? { ...prev, feature_traits: currentFeats } : null));
+      setError("Error al agregar dote o rasgo");
     }
   };
 
@@ -190,6 +413,12 @@ export default function CharacterDetailPage() {
   if (!character) return null;
 
   const e = editing ? editData : character;
+  const currentEquipment = (character.equipment as EquipmentItem[]) || [];
+  const currentFeats =
+    (character.feature_traits as FeatItem[]) &&
+    (character.feature_traits as FeatItem[]).length > 0
+      ? (character.feature_traits as FeatItem[])
+      : getStartingFeats(character.background);
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-6">
@@ -203,11 +432,11 @@ export default function CharacterDetailPage() {
         </Link>
 
         {error && (
-          <div className="p-3 bg-red-500/10 border border-red-500/50 rounded-lg text-red-400 text-sm">
-            {error}
+          <div className="p-3 bg-red-500/10 border border-red-500/50 rounded-lg text-red-400 text-sm flex justify-between items-center">
+            <span>{error}</span>
             <button
               onClick={() => setError(null)}
-              className="ml-2 underline text-red-300"
+              className="text-xs underline text-red-300 ml-4"
             >
               Cerrar
             </button>
@@ -215,7 +444,7 @@ export default function CharacterDetailPage() {
         )}
 
         {/* Sección 1 — Cabecera */}
-        <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
+        <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 shadow-xl">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div className="flex-1">
               {editing ? (
@@ -230,27 +459,35 @@ export default function CharacterDetailPage() {
                   {character.name}
                 </h1>
               )}
-              <div className="flex flex-wrap gap-3 mt-2 text-sm text-slate-400">
+              <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-slate-400">
                 {editing ? (
                   <>
-                    <input
-                      type="text"
+                    <select
                       value={String(e.class ?? "")}
                       onChange={(ev) =>
                         handleFieldChange("class", ev.target.value)
                       }
-                      placeholder="Clase"
-                      className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 w-28 focus:border-amber-500"
-                    />
-                    <input
-                      type="text"
+                      className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 focus:border-amber-500"
+                    >
+                      {DND_CLASSES.map((c) => (
+                        <option key={c.value} value={c.value}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
                       value={String(e.race ?? "")}
                       onChange={(ev) =>
                         handleFieldChange("race", ev.target.value)
                       }
-                      placeholder="Raza"
-                      className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 w-28 focus:border-amber-500"
-                    />
+                      className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 focus:border-amber-500"
+                    >
+                      {DND_RACES.map((r) => (
+                        <option key={r.value} value={r.value}>
+                          {r.label}
+                        </option>
+                      ))}
+                    </select>
                     <input
                       type="number"
                       value={Number(e.level ?? 1)}
@@ -259,33 +496,47 @@ export default function CharacterDetailPage() {
                       }
                       className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 w-16 focus:border-amber-500"
                     />
-                    <input
-                      type="text"
+                    <select
                       value={String(e.alignment ?? "")}
                       onChange={(ev) =>
                         handleFieldChange("alignment", ev.target.value)
                       }
-                      placeholder="Alineamiento"
-                      className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 w-36 focus:border-amber-500"
-                    />
-                    <input
-                      type="text"
+                      className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 focus:border-amber-500"
+                    >
+                      {DND_ALIGNMENTS.map((a) => (
+                        <option key={a.value} value={a.value}>
+                          {a.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
                       value={String(e.background ?? "")}
                       onChange={(ev) =>
                         handleFieldChange("background", ev.target.value)
                       }
-                      placeholder="Trasfondo"
-                      className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 w-36 focus:border-amber-500"
-                    />
+                      className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 focus:border-amber-500"
+                    >
+                      {DND_BACKGROUNDS.map((b) => (
+                        <option key={b.value} value={b.value}>
+                          {b.label}
+                        </option>
+                      ))}
+                    </select>
                   </>
                 ) : (
                   <>
-                    <span>
-                      {character.class} — Nivel {character.level}
+                    <span className="bg-slate-900 px-2.5 py-1 rounded border border-slate-700 text-slate-200 font-medium">
+                      {getClassLabel(character.class)} (Nivel {character.level})
                     </span>
-                    <span>{character.race}</span>
-                    <span>{character.alignment}</span>
-                    <span>{character.background}</span>
+                    <span className="bg-slate-900 px-2.5 py-1 rounded border border-slate-700 text-slate-300">
+                      {getRaceLabel(character.race)}
+                    </span>
+                    <span className="bg-slate-900 px-2.5 py-1 rounded border border-slate-700 text-slate-300">
+                      {getAlignmentLabel(character.alignment)}
+                    </span>
+                    <span className="bg-slate-900 px-2.5 py-1 rounded border border-slate-700 text-slate-300">
+                      {getBackgroundLabel(character.background)}
+                    </span>
                   </>
                 )}
               </div>
@@ -294,9 +545,9 @@ export default function CharacterDetailPage() {
               {character.game && (
                 <Link
                   href={`/games/${character.game.id}`}
-                  className="px-3 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded text-xs hover:bg-emerald-500/20 transition-colors"
+                  className="px-3 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded text-xs hover:bg-emerald-500/20 transition-colors flex items-center gap-1 font-semibold"
                 >
-                  {character.game.name}
+                  🎮 Partida: {character.game.name}
                 </Link>
               )}
               {editing ? (
@@ -306,7 +557,7 @@ export default function CharacterDetailPage() {
                     disabled={saving}
                     className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-semibold transition-colors disabled:opacity-50"
                   >
-                    {saving ? "Guardando..." : "Guardar"}
+                    {saving ? "Guardando..." : "Guardar Ficha"}
                   </button>
                   <button
                     onClick={cancelEditing}
@@ -318,70 +569,195 @@ export default function CharacterDetailPage() {
               ) : (
                 <button
                   onClick={startEditing}
-                  disabled={!!character.game}
-                  className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  title={character.game ? "No se puede editar un personaje en una partida activa" : undefined}
+                  className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-xs font-semibold transition-colors"
                 >
-                  Editar
+                  ✏️ Editar Datos Base
                 </button>
               )}
             </div>
           </div>
         </div>
 
-        {/* Sección 2 — Stats */}
-        <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
-          <h2 className="text-lg font-bold text-amber-400 mb-4 border-b border-slate-700 pb-2">
-            Atributos
-          </h2>
-          <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-            {STAT_KEYS.map((key) => (
-              <div
-                key={key}
-                className="bg-slate-900 p-3 rounded border border-slate-700 text-center"
-              >
-                <span className="block text-xs uppercase text-slate-400 mb-1">
-                  {STAT_LABELS[key]}
-                </span>
-                {editing ? (
-                  <input
-                    type="number"
-                    min={1}
-                    max={30}
-                    value={Number(e[key] ?? 10)}
-                    onChange={(ev) =>
-                      handleFieldChange(key, Number(ev.target.value))
-                    }
-                    className="w-full bg-transparent text-center font-bold text-lg text-slate-100 focus:outline-none"
-                  />
-                ) : (
-                  <>
-                    <span className="block text-2xl font-bold text-slate-100">
-                      {character[key]}
-                    </span>
-                    <span className="block text-xs text-slate-400">
-                      {getModifier(character[key] as number)}
-                    </span>
-                  </>
-                )}
-              </div>
-            ))}
+        {/* Sección 2 — Stats Principales y Competencias */}
+        <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 shadow-xl space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-700 pb-2">
+            <h2 className="text-lg font-bold text-amber-400">
+              Puntuaciones de Atributos y Competencias
+            </h2>
+            <span className="text-xs text-slate-400">
+              Haz clic en cualquier habilidad para marcar o desmarcar competencia
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {STAT_KEYS.map((key) => {
+              const statSkills = DND_SKILLS.filter((s) => s.stat === key);
+              const currentProfs = (character.proficiencies as string[]) || [];
+              const profBonus = getProficiencyBonus(character.level);
+
+              return (
+                <div
+                  key={key}
+                  className="bg-slate-900 rounded-lg border border-slate-700 p-4 space-y-3 flex flex-col justify-between shadow-sm"
+                >
+                  {/* Encabezado del Atributo */}
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                    <div>
+                      <span className="text-sm uppercase font-extrabold text-amber-400 tracking-wider">
+                        {STAT_LABELS[key]}
+                      </span>
+                      <span className="text-xs text-slate-400 ml-2 font-medium">
+                        ({STAT_NAMES_FULL[key]})
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {editing ? (
+                        <input
+                          type="number"
+                          min={1}
+                          max={30}
+                          value={Number(e[key] ?? 10)}
+                          onChange={(ev) =>
+                            handleFieldChange(key, Number(ev.target.value))
+                          }
+                          className="w-14 bg-slate-950 border border-slate-700 rounded text-center font-bold text-base text-slate-100 focus:outline-none focus:border-amber-500"
+                        />
+                      ) : (
+                        <>
+                          <span className="text-xl font-bold text-slate-100 font-mono">
+                            {character[key]}
+                          </span>
+                          <span className="text-xs font-bold text-amber-400 font-mono bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                            {getModifier(character[key] as number)}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Lista de Competencias asociadas */}
+                  <div className="space-y-1.5 flex-1">
+                    {statSkills.length === 0 ? (
+                      <p className="text-[11px] text-slate-500 italic py-2 text-center">
+                        Sin competencias de característica
+                      </p>
+                    ) : (
+                      statSkills.map((skill) => {
+                        const isProf = currentProfs.includes(skill.name);
+                        const statVal = Number(character[key] ?? 10);
+                        const statMod = Math.floor((statVal - 10) / 2);
+                        const totalMod = statMod + (isProf ? profBonus : 0);
+                        const modStr =
+                          totalMod >= 0 ? `+${totalMod}` : `${totalMod}`;
+                        const source = getProficiencySource(
+                          skill.name,
+                          character.background,
+                          character.race,
+                        );
+
+                        return (
+                          <div
+                            key={skill.id}
+                            onClick={() => handleToggleProficiency(skill.name)}
+                            className={`flex items-center justify-between p-2 rounded text-xs cursor-pointer transition-all ${
+                              isProf
+                                ? "bg-amber-500/10 border border-amber-500/30 hover:border-amber-500/60"
+                                : "bg-slate-950/60 hover:bg-slate-950 border border-slate-800"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <input
+                                type="checkbox"
+                                checked={isProf}
+                                readOnly
+                                className="rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-amber-500 focus:ring-offset-slate-900 cursor-pointer"
+                              />
+                              <span
+                                className={`truncate ${
+                                  isProf
+                                    ? "font-semibold text-slate-100"
+                                    : "text-slate-300"
+                                }`}
+                              >
+                                {skill.name}
+                              </span>
+                              {source && (
+                                <span
+                                  className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded font-medium shrink-0"
+                                  title={`Competencia de base otorgada por tu ${source}`}
+                                >
+                                  {source === "trasfondo" ? "Trasfondo" : "Raza"}
+                                </span>
+                              )}
+                            </div>
+                            <span
+                              className={`font-mono font-bold ml-2 ${
+                                isProf ? "text-amber-400" : "text-slate-400"
+                              }`}
+                            >
+                              {modStr}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* Sección 3 — Combate */}
-        <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
-          <h2 className="text-lg font-bold text-amber-400 mb-4 border-b border-slate-700 pb-2">
-            Combate
+        {/* Sección 3 — Combate (Interactiva) */}
+        <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 shadow-xl space-y-4">
+          <h2 className="text-lg font-bold text-amber-400 border-b border-slate-700 pb-2 flex justify-between items-center">
+            <span>Combate y Salud</span>
+            <span className="text-xs font-normal text-slate-400">
+              Ajusta tu vida directamente con los botones + / -
+            </span>
           </h2>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            {/* HP */}
-            <div className="md:col-span-2">
-              <label className="block text-xs text-slate-400 mb-1">
-                Puntos de Golpe
-              </label>
+
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-center">
+            {/* Control Interactivo de HP */}
+            <div className="md:col-span-3 bg-slate-950 p-4 rounded-xl border border-slate-700 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs uppercase text-slate-400 font-semibold">
+                  Puntos de Golpe (HP)
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => handleQuickHpUpdate(-5)}
+                    className="px-2 py-0.5 bg-red-950/80 hover:bg-red-900 border border-red-700/50 text-red-300 text-xs font-mono font-bold rounded"
+                    title="-5 HP"
+                  >
+                    -5
+                  </button>
+                  <button
+                    onClick={() => handleQuickHpUpdate(-1)}
+                    className="px-2 py-0.5 bg-red-950/80 hover:bg-red-900 border border-red-700/50 text-red-300 text-xs font-mono font-bold rounded"
+                    title="-1 HP"
+                  >
+                    -1
+                  </button>
+                  <button
+                    onClick={() => handleQuickHpUpdate(1)}
+                    className="px-2 py-0.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/50 text-emerald-300 text-xs font-mono font-bold rounded"
+                    title="+1 HP"
+                  >
+                    +1
+                  </button>
+                  <button
+                    onClick={() => handleQuickHpUpdate(5)}
+                    className="px-2 py-0.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/50 text-emerald-300 text-xs font-mono font-bold rounded"
+                    title="+5 HP"
+                  >
+                    +5
+                  </button>
+                </div>
+              </div>
+
               {editing ? (
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
                   <input
                     type="number"
                     min={0}
@@ -389,9 +765,9 @@ export default function CharacterDetailPage() {
                     onChange={(ev) =>
                       handleFieldChange("current_hp", Number(ev.target.value))
                     }
-                    className="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 text-center focus:border-amber-500"
+                    className="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 text-center font-mono font-bold focus:border-amber-500"
                   />
-                  <span className="text-slate-500 self-center">/</span>
+                  <span className="text-slate-500 font-bold">/</span>
                   <input
                     type="number"
                     min={1}
@@ -399,38 +775,25 @@ export default function CharacterDetailPage() {
                     onChange={(ev) =>
                       handleFieldChange("max_hp", Number(ev.target.value))
                     }
-                    className="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 text-center focus:border-amber-500"
-                  />
-                  <input
-                    type="number"
-                    min={0}
-                    placeholder="Temp"
-                    value={Number(e.temporary_hp ?? 0)}
-                    onChange={(ev) =>
-                      handleFieldChange(
-                        "temporary_hp",
-                        Number(ev.target.value),
-                      )
-                    }
-                    className="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 text-center focus:border-amber-500"
+                    className="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 text-center font-mono font-bold focus:border-amber-500"
                   />
                 </div>
               ) : (
                 <div>
-                  <div className="flex items-baseline gap-1 text-lg font-bold">
-                    <span className="text-slate-100">
+                  <div className="flex items-baseline gap-2 text-2xl font-bold font-mono">
+                    <span className="text-emerald-400">
                       {character.current_hp}
                     </span>
                     {character.temporary_hp > 0 && (
-                      <span className="text-blue-400 text-sm">
-                        (+{character.temporary_hp})
+                      <span className="text-blue-400 text-sm font-normal">
+                        (+{character.temporary_hp} temp)
                       </span>
                     )}
-                    <span className="text-slate-500">
-                      / {character.max_hp}
+                    <span className="text-slate-500 text-base">
+                      / {character.max_hp} MAX
                     </span>
                   </div>
-                  <div className="mt-1 h-2 bg-slate-700 rounded-full overflow-hidden">
+                  <div className="mt-2 h-2.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
                     <div
                       className={`h-full rounded-full transition-all ${getHpColor(character.current_hp, character.max_hp)}`}
                       style={{
@@ -442,431 +805,387 @@ export default function CharacterDetailPage() {
               )}
             </div>
 
-            {/* AC */}
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">CA</label>
-              {editing ? (
-                <input
-                  type="number"
-                  min={0}
-                  value={Number(e.armor ?? 0)}
-                  onChange={(ev) =>
-                    handleFieldChange("armor", Number(ev.target.value))
-                  }
-                  className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 text-center focus:border-amber-500"
-                />
-              ) : (
-                <span className="text-xl font-bold text-slate-100">
-                  {character.armor}
-                </span>
-              )}
+            {/* CA */}
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-700 text-center">
+              <label className="block text-xs uppercase text-slate-400 font-semibold mb-1">
+                Clase Armadura (AC)
+              </label>
+              <span className="text-2xl font-extrabold text-amber-400 font-mono">
+                {character.armor}
+              </span>
             </div>
 
-            {/* Initiative */}
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">
-                Iniciativa
+            {/* Dado de Golpe */}
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-700 text-center">
+              <label className="block text-xs uppercase text-slate-400 font-semibold mb-1">
+                Dado de Golpe
               </label>
-              {editing ? (
-                <input
-                  type="number"
-                  value={Number(e.initiative ?? 0)}
-                  onChange={(ev) =>
-                    handleFieldChange("initiative", Number(ev.target.value))
-                  }
-                  className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 text-center focus:border-amber-500"
-                />
-              ) : (
-                <span className="text-xl font-bold text-slate-100">
-                  {getModifier(character.dexterity)} ({character.initiative})
-                </span>
-              )}
+              <span className="text-2xl font-extrabold text-purple-400 font-mono">
+                {character.hitDice}
+              </span>
             </div>
 
-            {/* Speed */}
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">
-                Velocidad
+            {/* Bonificador de Competencia */}
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-700 text-center">
+              <label className="block text-xs uppercase text-slate-400 font-semibold mb-1">
+                Bonif. Competencia
               </label>
-              {editing ? (
-                <input
-                  type="number"
-                  min={0}
-                  value={Number(e.speed ?? 0)}
-                  onChange={(ev) =>
-                    handleFieldChange("speed", Number(ev.target.value))
-                  }
-                  className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 text-center focus:border-amber-500"
-                />
-              ) : (
-                <span className="text-xl font-bold text-slate-100">
-                  {character.speed} ft
-                </span>
-              )}
+              <span className="text-2xl font-extrabold text-emerald-400 font-mono">
+                +{getProficiencyBonus(character.level)}
+              </span>
             </div>
           </div>
+        </div>
 
-          {/* Hit Dice */}
-          <div className="mt-4">
-            <label className="block text-xs text-slate-400 mb-1">
-              Dado de Golpe
-            </label>
-            {editing ? (
-              <input
-                type="text"
-                value={String(e.hitDice ?? "")}
-                onChange={(ev) =>
-                  handleFieldChange("hitDice", ev.target.value)
-                }
-                className="w-32 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 focus:border-amber-500"
-              />
+        {/* Sección 4 — Dotes y Rasgos de Origen (Manual 2024) */}
+        <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 shadow-xl space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-700 pb-2">
+            <h2 className="text-lg font-bold text-amber-400 flex items-center gap-2">
+              ✨ Dotes y Rasgos de Origen (D&D 2024)
+            </h2>
+            <button
+              onClick={() => setIsAddingFeat(!isAddingFeat)}
+              className="text-xs bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded font-semibold transition-colors"
+            >
+              {isAddingFeat ? "Cancelar" : "+ Agregar Dote / Rasgo"}
+            </button>
+          </div>
+
+          {/* Formulario rápido para agregar Dote */}
+          {isAddingFeat && (
+            <form
+              onSubmit={handleAddFeat}
+              className="bg-slate-950 p-4 rounded-lg border border-purple-500/40 space-y-3"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-300 mb-1">
+                    Nombre de la Dote o Rasgo
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newFeatName}
+                    onChange={(e) => setNewFeatName(e.target.value)}
+                    placeholder="Ej: Iniciado en la Magia (Druida)"
+                    className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-sm focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-300 mb-1">
+                    Categoría
+                  </label>
+                  <input
+                    type="text"
+                    value={newFeatCategory}
+                    onChange={(e) => setNewFeatCategory(e.target.value)}
+                    placeholder="Ej: Dote de Origen (Nivel 1)"
+                    className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-sm focus:border-purple-500"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-300 mb-1">
+                  Descripción o Beneficios
+                </label>
+                <textarea
+                  rows={2}
+                  value={newFeatDesc}
+                  onChange={(e) => setNewFeatDesc(e.target.value)}
+                  placeholder="Describe los efectos o conjuros que otorga esta dote..."
+                  className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-sm focus:border-purple-500"
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded transition-colors"
+              >
+                Guardar Dote en Ficha
+              </button>
+            </form>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {currentFeats.length === 0 ? (
+              <p className="text-slate-500 italic text-sm md:col-span-2">
+                No hay dotes registradas. Al crear un personaje con trasfondo 2024, su dote de origen aparecerá aquí.
+              </p>
             ) : (
-              <span className="text-slate-200">{character.hitDice}</span>
+              currentFeats.map((feat) => (
+                <div
+                  key={feat.name}
+                  className="bg-slate-950 p-4 rounded-lg border border-slate-700 flex flex-col justify-between space-y-2 relative group"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-bold text-amber-300 text-sm">
+                      {feat.name}
+                    </span>
+                    <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded font-mono">
+                      {feat.category || "Dote"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    {feat.description}
+                  </p>
+                  <button
+                    onClick={() => handleRemoveFeat(feat.name)}
+                    className="text-[10px] text-red-400 hover:text-red-300 opacity-0 group-hover:opacity-100 transition-opacity self-end pt-1"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              ))
             )}
           </div>
         </div>
 
-        {/* Sección 4 — Economía */}
-        <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
-          <h2 className="text-lg font-bold text-amber-400 mb-4 border-b border-slate-700 pb-2">
-            Economía
-          </h2>
-          <div className="flex gap-6">
-            {(
-              [
-                ["gold_coins", "Oro", "text-yellow-400"],
-                ["silver_coins", "Plata", "text-slate-300"],
-                ["copper_coins", "Cobre", "text-amber-700"],
-              ] as const
-            ).map(([key, label, color]) => (
-              <div key={key}>
-                <label className="block text-xs text-slate-400 mb-1">
-                  {label}
-                </label>
-                {editing ? (
+        {/* Sección 5 — Equipamiento e Inventario Completo */}
+        <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 shadow-xl space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-700 pb-2">
+            <h2 className="text-lg font-bold text-amber-400 flex items-center gap-2">
+              🎒 Equipamiento e Inventario
+            </h2>
+            <button
+              onClick={() => setIsAddingEquip(!isAddingEquip)}
+              className="text-xs bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded font-semibold transition-colors"
+            >
+              {isAddingEquip ? "Cancelar" : "+ Agregar Objeto"}
+            </button>
+          </div>
+
+          {/* Formulario rápido para agregar objeto */}
+          {isAddingEquip && (
+            <form
+              onSubmit={handleAddEquipmentItem}
+              className="bg-slate-950 p-4 rounded-lg border border-amber-500/40 space-y-3"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs text-slate-300 mb-1">
+                    Nombre del Objeto / Arma / Armadura
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newEquipName}
+                    onChange={(e) => setNewEquipName(e.target.value)}
+                    placeholder="Ej: Poción de Curación"
+                    className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-sm focus:border-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-300 mb-1">
+                    Cantidad
+                  </label>
                   <input
                     type="number"
-                    min={0}
-                    value={Number(e[key] ?? 0)}
-                    onChange={(ev) =>
-                      handleFieldChange(key, Number(ev.target.value))
-                    }
-                    className="w-24 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 focus:border-amber-500"
+                    min={1}
+                    value={newEquipQty}
+                    onChange={(e) => setNewEquipQty(Number(e.target.value))}
+                    className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-sm focus:border-amber-500 font-mono"
                   />
-                ) : (
-                  <span className={`text-lg font-bold ${color}`}>
-                    {character[key]}
-                  </span>
-                )}
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Sección 5 — Personalidad */}
-        <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
-          <h2 className="text-lg font-bold text-amber-400 mb-4 border-b border-slate-700 pb-2">
-            Personalidad
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {(
-              [
-                ["personality_traits", "Rasgos de Personalidad"],
-                ["ideals", "Ideales"],
-                ["bonds", "Vínculos"],
-                ["flaws", "Defectos"],
-              ] as const
-            ).map(([key, label]) => (
-              <div key={key}>
-                <label className="block text-xs text-slate-400 mb-1">
-                  {label}
+              <div>
+                <label className="block text-xs text-slate-300 mb-1">
+                  Notas / Descripción (Opcional)
                 </label>
-                {editing ? (
-                  <textarea
-                    value={String(e[key] ?? "")}
-                    onChange={(ev) =>
-                      handleFieldChange(key, ev.target.value)
-                    }
-                    rows={3}
-                    className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-200 text-sm focus:border-amber-500 resize-none"
-                  />
-                ) : (
-                  <p className="text-sm text-slate-300 whitespace-pre-wrap">
-                    {character[key] || (
-                      <span className="text-slate-600 italic">Sin definir</span>
-                    )}
-                  </p>
-                )}
+                <input
+                  type="text"
+                  value={newEquipDesc}
+                  onChange={(e) => setNewEquipDesc(e.target.value)}
+                  placeholder="Ej: Recupera 2d4 + 2 HP"
+                  className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-sm focus:border-amber-500"
+                />
               </div>
-            ))}
-          </div>
-        </div>
+              <button
+                type="submit"
+                className="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded transition-colors"
+              >
+                Guardar Objeto en Inventario
+              </button>
+            </form>
+          )}
 
-        {/* Sección 6 — Apariencia */}
-        <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
-          <h2 className="text-lg font-bold text-amber-400 mb-4 border-b border-slate-700 pb-2">
-            Apariencia
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            {(
-              [
-                ["age", "Edad"],
-                ["height", "Altura"],
-                ["weight", "Peso"],
-                ["skin", "Piel"],
-                ["hair", "Cabello"],
-              ] as const
-            ).map(([key, label]) => (
-              <div key={key}>
-                <label className="block text-xs text-slate-400 mb-1">
-                  {label}
-                </label>
-                {editing ? (
-                  <input
-                    type={key === "skin" ? "text" : "number"}
-                    value={String(e[key] ?? "")}
-                    onChange={(ev) =>
-                      handleFieldChange(
-                        key,
-                        key === "skin" ? ev.target.value : Number(ev.target.value),
-                      )
-                    }
-                    className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 focus:border-amber-500"
-                  />
-                ) : (
-                  <span className="text-sm text-slate-300">
-                    {character[key] != null
-                      ? String(character[key])
-                      : "—"}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-          {/* appearance_img */}
-          <div className="mt-4">
-            <label className="block text-xs text-slate-400 mb-1">
-              Imagen de Apariencia
-            </label>
-            {editing ? (
-              <input
-                type="text"
-                value={String(e.appearance_img ?? "")}
-                onChange={(ev) =>
-                  handleFieldChange("appearance_img", ev.target.value)
-                }
-                placeholder="URL de imagen"
-                className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 focus:border-amber-500"
-              />
-            ) : character.appearance_img ? (
-              <img
-                src={character.appearance_img}
-                alt={`Apariencia de ${character.name}`}
-                className="max-w-xs rounded border border-slate-700 mt-2"
-              />
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            {currentEquipment.length === 0 ? (
+              <p className="text-slate-500 italic text-sm md:col-span-3">
+                El inventario está vacío.
+              </p>
             ) : (
-              <span className="text-sm text-slate-600 italic">
-                Sin imagen
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Sección 7 — Historia y Aliados */}
-        <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
-          <h2 className="text-lg font-bold text-amber-400 mb-4 border-b border-slate-700 pb-2">
-            Historia y Aliados
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">
-                Historia
-              </label>
-              {editing ? (
-                <textarea
-                  value={String(e.story ?? "")}
-                  onChange={(ev) => handleFieldChange("story", ev.target.value)}
-                  rows={5}
-                  className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-200 text-sm focus:border-amber-500 resize-none"
-                />
-              ) : (
-                <p className="text-sm text-slate-300 whitespace-pre-wrap">
-                  {character.story || (
-                    <span className="text-slate-600 italic">
-                      Sin historia definida
+              currentEquipment.map((item) => (
+                <div
+                  key={item.name}
+                  className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between gap-2 shadow-inner"
+                >
+                  <div className="min-w-0 flex-1">
+                    <span className="font-semibold text-slate-200 text-xs truncate block">
+                      {item.name}
                     </span>
-                  )}
-                </p>
-              )}
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">
-                Aliados
-              </label>
-              {editing ? (
-                <textarea
-                  value={String(e.allies ?? "")}
-                  onChange={(ev) =>
-                    handleFieldChange("allies", ev.target.value)
-                  }
-                  rows={5}
-                  className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-200 text-sm focus:border-amber-500 resize-none"
-                />
-              ) : (
-                <p className="text-sm text-slate-300 whitespace-pre-wrap">
-                  {character.allies || (
-                    <span className="text-slate-600 italic">
-                      Sin aliados definidos
-                    </span>
-                  )}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Sección 8 — Equipo, Proficiencies, Spells */}
-        <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
-          <h2 className="text-lg font-bold text-amber-400 mb-4 border-b border-slate-700 pb-2">
-            Equipo y Habilidades
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {(
-              [
-                ["equipment", "Equipamiento"],
-                ["proficiencies", "Competencias"],
-                ["spells", "Hechizos"],
-              ] as const
-            ).map(([key, label]) => (
-              <div key={key}>
-                <label className="block text-xs text-slate-400 mb-1">
-                  {label}
-                </label>
-                {editing ? (
-                  <textarea
-                    value={JSON.stringify(e[key] ?? [], null, 2)}
-                    onChange={(ev) =>
-                      handleJsonFieldChange(key, ev.target.value)
-                    }
-                    rows={6}
-                    className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-200 text-xs font-mono focus:border-amber-500 resize-none"
-                  />
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {Array.isArray(character[key]) &&
-                    (character[key] as unknown[]).length > 0 ? (
-                      (character[key] as unknown[]).map(
-                        (item: unknown, idx: number) => (
-                          <span
-                            key={idx}
-                            className="px-2 py-0.5 bg-slate-900 border border-slate-700 rounded text-xs text-slate-300"
-                          >
-                            {typeof item === "string"
-                              ? item
-                              : JSON.stringify(item)}
-                          </span>
-                        ),
-                      )
-                    ) : (
-                      <span className="text-slate-600 italic text-xs">
-                        Vacío
+                    {item.description && (
+                      <span className="text-[11px] text-slate-400 block truncate">
+                        {item.description}
                       </span>
                     )}
                   </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Experiencia, Proficiency Bonus, Inspiration */}
-        <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
-          <div className="flex flex-wrap gap-6">
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">
-                Experiencia
-              </label>
-              {editing ? (
-                <input
-                  type="number"
-                  min={0}
-                  value={Number(e.exp ?? 0)}
-                  onChange={(ev) =>
-                    handleFieldChange("exp", Number(ev.target.value))
-                  }
-                  className="w-28 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 focus:border-amber-500"
-                />
-              ) : (
-                <span className="text-lg font-bold text-slate-100">
-                  {character.exp} XP
-                </span>
-              )}
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">
-                Bono de Competencia
-              </label>
-              {editing ? (
-                <input
-                  type="number"
-                  min={0}
-                  value={Number(e.proficiency ?? 2)}
-                  onChange={(ev) =>
-                    handleFieldChange("proficiency", Number(ev.target.value))
-                  }
-                  className="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 focus:border-amber-500"
-                />
-              ) : (
-                <span className="text-lg font-bold text-slate-100">
-                  +{character.proficiency}
-                </span>
-              )}
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">
-                Inspiración
-              </label>
-              {editing ? (
-                <input
-                  type="number"
-                  min={0}
-                  value={Number(e.inspiration ?? 0)}
-                  onChange={(ev) =>
-                    handleFieldChange("inspiration", Number(ev.target.value))
-                  }
-                  className="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 focus:border-amber-500"
-                />
-              ) : (
-                <span className="text-lg font-bold text-slate-100">
-                  {character.inspiration}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Botón Desactivar */}
-        {!editing && (
-          <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 flex justify-between items-center">
-            {character.game ? (
-              <p className="text-xs text-slate-400">
-                Este personaje está en la partida{" "}
-                <span className="text-emerald-400 font-semibold">{character.game.name}</span>.
-                No puede ser editado ni desactivado hasta que el DM lo saque de la sala.
-              </p>
-            ) : (
-              <span />
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => handleUpdateItemQty(item.name, -1)}
+                      className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-mono rounded border border-slate-700"
+                      title="Restar 1"
+                    >
+                      -
+                    </button>
+                    <span className="text-amber-400 font-bold font-mono text-xs px-1">
+                      x{item.quantity}
+                    </span>
+                    <button
+                      onClick={() => handleUpdateItemQty(item.name, 1)}
+                      className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-mono rounded border border-slate-700"
+                      title="Sumar 1"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              ))
             )}
-            <button
-              onClick={handleDelete}
-              disabled={deleting || !!character.game}
-              className="px-4 py-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-500/30 rounded-lg text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              title={character.game ? "No se puede desactivar un personaje en una partida activa" : undefined}
-            >
-              {deleting ? "Desactivando..." : "Desactivar Personaje"}
-            </button>
           </div>
-        )}
+        </div>
+
+        {/* Sección 6 — Economía y Monedas (Interactiva en vivo) */}
+        <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 shadow-xl">
+          <div className="flex items-center justify-between mb-4 border-b border-slate-700 pb-2">
+            <h2 className="text-lg font-bold text-amber-400">
+              Economía y Bolsa de Monedas
+            </h2>
+            <span className="text-xs text-slate-400">
+              Usa los botones + / - o haz clic en la cifra para ingresar un valor exacto
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {(
+              [
+                [
+                  "gold_coins",
+                  "Piezas de Oro (PO)",
+                  "text-yellow-400",
+                  "bg-yellow-500/10",
+                  "border-yellow-500/30",
+                  "🪙",
+                ],
+                [
+                  "silver_coins",
+                  "Piezas de Plata (PP)",
+                  "text-slate-200",
+                  "bg-slate-400/10",
+                  "border-slate-400/30",
+                  "⚪",
+                ],
+                [
+                  "copper_coins",
+                  "Piezas de Cobre (PC)",
+                  "text-amber-600",
+                  "bg-amber-700/10",
+                  "border-amber-700/30",
+                  "🟤",
+                ],
+              ] as const
+            ).map(([key, label, textColor, bgColor, borderColor, icon]) => {
+              const currentVal = Number(character[key] ?? 0);
+              const isEditingThis = editingCoin === key;
+
+              return (
+                <div
+                  key={key}
+                  className={`${bgColor} ${borderColor} border p-4 rounded-xl flex flex-col items-center justify-between gap-3 shadow-md relative`}
+                >
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 uppercase tracking-wide">
+                    <span>{icon}</span>
+                    <span>{label}</span>
+                  </div>
+
+                  {/* Edición directa por clic */}
+                  {isEditingThis ? (
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min={0}
+                        autoFocus
+                        value={coinInputValue}
+                        onChange={(e) => setCoinInputValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter")
+                            handleSaveDirectCoin(key, coinInputValue);
+                          if (e.key === "Escape") setEditingCoin(null);
+                        }}
+                        className="w-24 bg-slate-950 border border-amber-500 rounded px-2 py-1 text-center font-bold text-xl text-slate-100 focus:outline-none font-mono"
+                      />
+                      <button
+                        onClick={() =>
+                          handleSaveDirectCoin(key, coinInputValue)
+                        }
+                        className="px-2 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-bold transition-colors"
+                      >
+                        ✓
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setEditingCoin(key);
+                        setCoinInputValue(String(currentVal));
+                      }}
+                      title="Haz clic para editar la cifra exacta"
+                      className={`text-3xl font-extrabold font-mono ${textColor} hover:scale-105 transition-transform cursor-pointer px-4 py-1 rounded bg-slate-950/60 hover:bg-slate-950 border border-slate-800 hover:border-amber-500/50`}
+                    >
+                      {currentVal}
+                    </button>
+                  )}
+
+                  {/* Botones de acción rápida +/- */}
+                  <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-lg border border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => handleQuickCoinUpdate(key, -10)}
+                      disabled={currentVal < 10}
+                      className="px-2 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-xs font-mono font-bold text-slate-300 rounded transition-colors"
+                      title="Restar 10"
+                    >
+                      -10
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickCoinUpdate(key, -1)}
+                      disabled={currentVal < 1}
+                      className="px-2 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-xs font-mono font-bold text-slate-300 rounded transition-colors"
+                      title="Restar 1"
+                    >
+                      -1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickCoinUpdate(key, 1)}
+                      className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-mono font-bold text-emerald-400 rounded transition-colors"
+                      title="Sumar 1"
+                    >
+                      +1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickCoinUpdate(key, 10)}
+                      className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-mono font-bold text-emerald-400 rounded transition-colors"
+                      title="Sumar 10"
+                    >
+                      +10
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );

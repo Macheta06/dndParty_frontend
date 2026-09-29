@@ -20,6 +20,10 @@ export interface CreateCharacterDto {
   max_hp: number;
   current_hp: number;
   hitDice: string;
+  gold_coins?: number;
+  equipment?: unknown[];
+  feature_traits?: unknown;
+  proficiencies?: unknown[];
 }
 
 export const characterService = {
@@ -51,5 +55,9 @@ export const characterService = {
 
   async deleteCharacter(id: number): Promise<void> {
     await api.delete(`/characters/${id}`);
+  },
+
+  async deleteCharacterPermanent(id: number): Promise<void> {
+    await api.delete(`/characters/${id}/permanent`);
   },
 };
