@@ -22,6 +22,7 @@ import DiceRoller from "@/components/DiceRoller";
 import RollHistory from "@/components/RollHistory";
 import Chat from "@/components/Chat";
 import Equipment from "@/components/Equipment";
+import CharacterSheetModal from "@/components/CharacterSheetModal";
 import { GameRoomSkeleton } from "@/components/Skeletons";
 
 interface HpUpdate {
@@ -89,6 +90,8 @@ export default function GameRoomPage({
 
   const [connectedPlayerIds, setConnectedPlayerIds] = useState<Set<number>>(new Set());
   const [announcement, setAnnouncement] = useState<string | null>(null);
+
+  const [selectedViewCharacterId, setSelectedViewCharacterId] = useState<number | null>(null);
 
   const [activeSocket, setActiveSocket] = useState<Socket | null>(null);
   const [rollHistory, setRollHistory] = useState<DiceRollResult[]>([]);
@@ -491,7 +494,20 @@ export default function GameRoomPage({
                       <div className="flex justify-between items-center mb-3">
                         <div>
                           <h3 className="font-bold text-lg text-slate-200 flex items-center gap-2">
-                            {char.name}
+                            {isMaster || user?.id === char.userId ? (
+                              <button
+                                onClick={() => setSelectedViewCharacterId(char.id)}
+                                className="hover:text-amber-400 underline decoration-amber-500/40 underline-offset-4 flex items-center gap-2 text-left cursor-pointer transition-colors group"
+                                title="Ver Hoja de Personaje Completa"
+                              >
+                                <span>{char.name}</span>
+                                <span className="text-[11px] font-normal text-amber-400 bg-amber-500/10 group-hover:bg-amber-500/20 px-2 py-0.5 rounded-md border border-amber-500/30 transition-colors no-underline">
+                                  👁️ Ver Ficha
+                                </span>
+                              </button>
+                            ) : (
+                              <span>{char.name}</span>
+                            )}
                             <span
                               className={`w-2 h-2 rounded-full ${connectedPlayerIds.has(char.userId) ? "bg-emerald-400" : "bg-slate-600"}`}
                               title={
@@ -1025,6 +1041,19 @@ export default function GameRoomPage({
             </form>
           </div>
         </div>
+      )}
+
+      {/* MODAL HOJA DE PERSONAJE PARA EL MASTER */}
+      {selectedViewCharacterId && (
+        <CharacterSheetModal
+          characterId={selectedViewCharacterId}
+          initialCharacter={
+            game.characters.find((c) => c.id === selectedViewCharacterId) ??
+            game.npcs.find((n) => n.id === selectedViewCharacterId)
+          }
+          onClose={() => setSelectedViewCharacterId(null)}
+          isMaster={isMaster}
+        />
       )}
     </div>
   );
