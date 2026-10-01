@@ -88,9 +88,17 @@ export default function GameRoomPage({
   const [isGrantingXp, setIsGrantingXp] = useState(false);
 
   const [connectedPlayerIds, setConnectedPlayerIds] = useState<Set<number>>(new Set());
+  const [announcement, setAnnouncement] = useState<string | null>(null);
 
   const [activeSocket, setActiveSocket] = useState<Socket | null>(null);
   const [rollHistory, setRollHistory] = useState<DiceRollResult[]>([]);
+
+  useEffect(() => {
+    if (announcement) {
+      const timer = setTimeout(() => setAnnouncement(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [announcement]);
 
   useEffect(() => {
     async function fetchGame() {
@@ -188,8 +196,11 @@ export default function GameRoomPage({
       },
     );
 
-    socket.on("playerOnline", (data: { userId: number }) => {
+    socket.on("playerOnline", (data: { userId: number; characterName?: string }) => {
       setConnectedPlayerIds((prev) => new Set(prev).add(data.userId));
+      if (data.characterName) {
+        setAnnouncement(`🟢 ${data.characterName} ha entrado a la sala.`);
+      }
     });
 
     socket.on("playerOffline", (data: { userId: number }) => {
@@ -202,6 +213,31 @@ export default function GameRoomPage({
 
     socket.on("roomUsers", (userIds: number[]) => {
       setConnectedPlayerIds(new Set(userIds));
+    });
+
+    socket.on("characterJoined", (newChar: Character) => {
+      setGame((prevGame) => {
+        if (!prevGame) return prevGame;
+        if (prevGame.characters.some((c) => c.id === newChar.id)) {
+          return prevGame;
+        }
+        return {
+          ...prevGame,
+          characters: [...prevGame.characters, newChar],
+        };
+      });
+      setAnnouncement(`⚔️ ¡${newChar.name} (${newChar.race} ${newChar.class}) se ha unido a la partida!`);
+    });
+
+    socket.on("playerLeft", (characterId: number) => {
+      setGame((prevGame) =>
+        prevGame
+          ? {
+              ...prevGame,
+              characters: prevGame.characters.filter((c) => c.id !== characterId),
+            }
+          : prevGame,
+      );
     });
 
     socket.on("noteCreated", (note: Note) => {
@@ -240,6 +276,7 @@ export default function GameRoomPage({
     });
 
     return () => {
+      socket.emit("leaveGameRoom", gameId);
       socket.disconnect();
       setActiveSocket(null);
     };
@@ -385,7 +422,14 @@ export default function GameRoomPage({
   const isMaster = user?.id === game.masterId;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-6">
+    <div className="min-h-screen bg-slate-900 text-slate-100 p-6 relative">
+      {/* Banner de anuncio en tiempo real */}
+      {announcement && (
+        <div className="fixed top-4 right-4 z-50 bg-amber-500 text-slate-950 font-bold px-4 py-2.5 rounded-xl shadow-2xl border border-amber-300 transition-all flex items-center gap-2">
+          <span>{announcement}</span>
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto">
         {/* Header de la Sala */}
         <header className="flex justify-between items-end border-b border-slate-700 pb-4 mb-8">
