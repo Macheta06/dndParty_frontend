@@ -494,20 +494,22 @@ export default function GameRoomPage({
                       <div className="flex justify-between items-center mb-3">
                         <div>
                           <h3 className="font-bold text-lg text-slate-200 flex items-center gap-2">
-                            {isMaster || user?.id === char.userId ? (
-                              <button
-                                onClick={() => setSelectedViewCharacterId(char.id)}
-                                className="hover:text-amber-400 underline decoration-amber-500/40 underline-offset-4 flex items-center gap-2 text-left cursor-pointer transition-colors group"
-                                title="Ver Hoja de Personaje Completa"
-                              >
-                                <span>{char.name}</span>
-                                <span className="text-[11px] font-normal text-amber-400 bg-amber-500/10 group-hover:bg-amber-500/20 px-2 py-0.5 rounded-md border border-amber-500/30 transition-colors no-underline">
-                                  👁️ Ver Ficha
-                                </span>
-                              </button>
-                            ) : (
+                            <button
+                              onClick={() => setSelectedViewCharacterId(char.id)}
+                              className="hover:text-amber-400 underline decoration-amber-500/40 underline-offset-4 flex items-center gap-2 text-left cursor-pointer transition-colors group"
+                              title={
+                                user?.id === char.userId
+                                  ? "Ver y editar tu Hoja de Personaje"
+                                  : `Ver Ficha de ${char.name}`
+                              }
+                            >
                               <span>{char.name}</span>
-                            )}
+                              <span className="text-[11px] font-normal text-amber-400 bg-amber-500/10 group-hover:bg-amber-500/20 px-2 py-0.5 rounded-md border border-amber-500/30 transition-colors no-underline">
+                                {user?.id === char.userId
+                                  ? "✏️ Tu Ficha"
+                                  : "👁️ Ver Ficha"}
+                              </span>
+                            </button>
                             <span
                               className={`w-2 h-2 rounded-full ${connectedPlayerIds.has(char.userId) ? "bg-emerald-400" : "bg-slate-600"}`}
                               title={
