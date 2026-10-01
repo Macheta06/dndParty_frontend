@@ -16,7 +16,7 @@ export default function Chat({ socket, gameId }: ChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function loadMessages() {
@@ -46,8 +46,8 @@ export default function Chat({ socket, gameId }: ChatProps) {
   }, [socket]);
 
   useEffect(() => {
-    if (messagesEndRef.current?.scrollIntoView) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [messages]);
 
@@ -63,7 +63,10 @@ export default function Chat({ socket, gameId }: ChatProps) {
     <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow">
       <h3 className="text-sm font-bold text-slate-400 mb-3">Chat de la Sala</h3>
 
-      <div className="h-48 overflow-y-auto space-y-2 mb-3 bg-slate-900 rounded p-2">
+      <div
+        ref={chatContainerRef}
+        className="h-48 overflow-y-auto space-y-2 mb-3 bg-slate-900 rounded p-2"
+      >
         {isLoading ? (
           <p className="text-slate-500 italic text-xs">Cargando mensajes...</p>
         ) : messages.length === 0 ? (
@@ -86,7 +89,6 @@ export default function Chat({ socket, gameId }: ChatProps) {
             </div>
           ))
         )}
-        <div ref={messagesEndRef} />
       </div>
 
       <form onSubmit={handleSend} className="flex gap-2">
