@@ -571,18 +571,24 @@ export default function GameRoomPage({
           </div>
 
           {/* Columna Derecha (1/3): Iniciativa, Dados y Panel del Master */}
-          <div className="space-y-4">
-            <InitiativeTracker
-              socket={activeSocket}
-              game={game}
-              isMaster={isMaster}
-            />
+          <div className="space-y-8">
+            <section className="space-y-4">
+              <h2 className="text-xl font-bold text-amber-500 mb-4">
+                Mesa de Juego
+              </h2>
 
-            <DiceRoller socket={activeSocket} />
+              <InitiativeTracker
+                socket={activeSocket}
+                game={game}
+                isMaster={isMaster}
+              />
 
-            <RollHistory history={rollHistory} />
+              <DiceRoller socket={activeSocket} />
 
-            <Chat socket={activeSocket} gameId={gameId} />
+              <RollHistory history={rollHistory} />
+
+              <Chat socket={activeSocket} gameId={gameId} />
+            </section>
 
             {!isMaster &&
               game.notes &&
