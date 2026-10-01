@@ -8,6 +8,7 @@ import { characterService } from "@/services/character.service";
 import { gameService } from "@/services/game.service";
 import { Character } from "@/types/character";
 import { Game } from "@/types/game";
+import { DashboardSkeleton } from "@/components/Skeletons";
 
 export default function DashboardPage() {
   const { user, logout } = useAuth();
@@ -60,13 +61,7 @@ export default function DashboardPage() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center">
-        <p className="text-amber-500 font-semibold text-lg animate-pulse">
-          Cargando tus aventuras...
-        </p>
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   return (

@@ -22,6 +22,7 @@ import DiceRoller from "@/components/DiceRoller";
 import RollHistory from "@/components/RollHistory";
 import Chat from "@/components/Chat";
 import Equipment from "@/components/Equipment";
+import { GameRoomSkeleton } from "@/components/Skeletons";
 
 interface HpUpdate {
   characterId: number;
@@ -245,11 +246,7 @@ export default function GameRoomPage({
   }, [gameId]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center text-amber-500 font-bold text-xl">
-        Cargando mesa...
-      </div>
-    );
+    return <GameRoomSkeleton />;
   }
 
   if (error || !game) {

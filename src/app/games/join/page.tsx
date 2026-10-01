@@ -6,6 +6,7 @@ import Link from "next/link";
 import { gameService } from "@/services/game.service";
 import { characterService } from "@/services/character.service";
 import { Character } from "@/types/character";
+import { FormSkeleton } from "@/components/Skeletons";
 import axios from "axios";
 
 export default function JoinGamePage() {
@@ -69,6 +70,10 @@ export default function JoinGamePage() {
       setSubmitting(false);
     }
   };
+
+  if (loadingCharacters) {
+    return <FormSkeleton />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-6 flex items-center justify-center">

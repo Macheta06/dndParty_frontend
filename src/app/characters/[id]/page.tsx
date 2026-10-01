@@ -22,6 +22,7 @@ import {
   EquipmentItem,
   FeatItem,
 } from "@/constants/dnd";
+import { CharacterSheetSkeleton } from "@/components/Skeletons";
 import axios from "axios";
 
 const STAT_LABELS: Record<string, string> = {
@@ -387,13 +388,7 @@ export default function CharacterDetailPage() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center">
-        <p className="text-amber-500 font-semibold text-lg animate-pulse">
-          Cargando ficha de personaje...
-        </p>
-      </div>
-    );
+    return <CharacterSheetSkeleton />;
   }
 
   if (error && !character) {
