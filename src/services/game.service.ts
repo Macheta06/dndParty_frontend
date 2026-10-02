@@ -67,6 +67,10 @@ export const gameService = {
     const { data } = await api.post<Character>(`/games/${gameId}/npcs`, npcData);
     return data;
   },
+  async deleteNpc(gameId: string, npcId: number) {
+    const { data } = await api.delete(`/games/${gameId}/npcs/${npcId}`);
+    return data;
+  },
   async createNote(gameId: string, noteData: CreateNoteDto): Promise<Note> {
     const { data } = await api.post<Note>(`/games/${gameId}/notes`, noteData);
     return data;

@@ -62,10 +62,6 @@ export default function GameRoomPage({
 
   const { id: gameId } = use(params);
 
-  const [isHpModalOpen, setIsHpModalOpen] = useState(false);
-  const [selectedCharId, setSelectedCharId] = useState<number | "">("");
-  const [newHp, setNewHp] = useState<number | "">("");
-  const [isUpdatingHp, setIsUpdatingHp] = useState(false);
   const router = useRouter();
   const [isLeaving, setIsLeaving] = useState(false);
 
@@ -251,6 +247,25 @@ export default function GameRoomPage({
       );
     });
 
+    socket.on("npcDeleted", (data: { npcId: number }) => {
+      setGame((prevGame) =>
+        prevGame
+          ? {
+              ...prevGame,
+              npcs: prevGame.npcs.filter((npc) => npc.id !== data.npcId),
+              initiative: prevGame.initiative
+                ? {
+                    ...prevGame.initiative,
+                    entries: prevGame.initiative.entries.filter(
+                      (entry) => !(entry.type === "npc" && entry.id === data.npcId),
+                    ),
+                  }
+                : null,
+            }
+          : prevGame,
+      );
+    });
+
     socket.on(
       "equipmentUpdated",
       (data: { characterId: number; equipment: unknown[] }) => {
@@ -297,31 +312,47 @@ export default function GameRoomPage({
     );
   }
 
-  const handleUpdateHp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!game || selectedCharId === "" || newHp === "") return;
+  const handleNpcHpQuickChange = async (npc: Character, delta: number) => {
+    if (!game) return;
+    const newHp = Math.max(0, Math.min(npc.max_hp, npc.current_hp + delta));
+    if (newHp === npc.current_hp) return;
 
-    setIsUpdatingHp(true);
+    setGame((prev) =>
+      applyHpUpdate(prev, { characterId: npc.id, current_hp: newHp }),
+    );
+
     try {
-      await gameService.updateCharacterHp(gameId, Number(selectedCharId), {
-        current_hp: Number(newHp),
+      await gameService.updateCharacterHp(gameId, npc.id, {
+        current_hp: newHp,
       });
-
-      setGame((prevGame) =>
-        applyHpUpdate(prevGame, {
-          characterId: Number(selectedCharId),
-          current_hp: Number(newHp),
-        }),
-      );
-
-      setIsHpModalOpen(false);
-      setSelectedCharId("");
-      setNewHp("");
     } catch (err) {
-      console.error("Error actualizando HP:", err);
-      alert("Hubo un error al actualizar la vida del personaje.");
-    } finally {
-      setIsUpdatingHp(false);
+      console.error("Error actualizando HP de enemigo:", err);
+    }
+  };
+
+  const handleDeleteNpc = async (npcId: number, npcName: string) => {
+    if (!confirm(`¿Deseas eliminar a ${npcName} de la partida?`)) return;
+    try {
+      await gameService.deleteNpc(gameId, npcId);
+      setGame((prevGame) =>
+        prevGame
+          ? {
+              ...prevGame,
+              npcs: prevGame.npcs.filter((npc) => npc.id !== npcId),
+              initiative: prevGame.initiative
+                ? {
+                    ...prevGame.initiative,
+                    entries: prevGame.initiative.entries.filter(
+                      (entry) => !(entry.type === "npc" && entry.id === npcId),
+                    ),
+                  }
+                : null,
+            }
+          : prevGame,
+      );
+    } catch (err) {
+      console.error("Error eliminando enemigo:", err);
+      alert("Hubo un error al eliminar al enemigo.");
     }
   };
 
@@ -560,26 +591,102 @@ export default function GameRoomPage({
                   {game.npcs.map((npc) => (
                     <div
                       key={npc.id}
-                      className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow flex justify-between items-center"
+                      className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow space-y-3"
                     >
-                      <div>
-                        <h3 className="font-bold text-lg text-slate-200">
-                          {npc.name}
-                        </h3>
-                        <p className="text-xs text-slate-400">
-                          {npc.race} {npc.class} - Lvl {npc.level}
-                        </p>
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h3 className="font-bold text-lg text-slate-200">
+                            {npc.name}
+                          </h3>
+                          <p className="text-xs text-slate-400">
+                            {npc.race || "Enemigo"}{" "}
+                            {npc.class ? `- ${npc.class}` : ""}{" "}
+                            {npc.level ? `(Niv. ${npc.level})` : ""}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-right">
+                            <p className="text-[11px] font-bold text-slate-400">
+                              HP
+                            </p>
+                            <p
+                              className={`text-lg font-black ${
+                                npc.current_hp <= npc.max_hp / 4
+                                  ? "text-red-500"
+                                  : npc.current_hp <= npc.max_hp / 2
+                                    ? "text-amber-400"
+                                    : "text-emerald-400"
+                              }`}
+                            >
+                              {npc.current_hp}{" "}
+                              <span className="text-xs text-slate-500 font-normal">
+                                / {npc.max_hp}
+                              </span>
+                            </p>
+                          </div>
+                          {isMaster && (
+                            <button
+                              onClick={() => handleDeleteNpc(npc.id, npc.name)}
+                              className="text-slate-400 hover:text-red-400 p-1 rounded hover:bg-slate-700/60 transition-colors ml-1"
+                              title="Eliminar enemigo"
+                            >
+                              🗑️
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold text-slate-300">HP</p>
-                        <p
-                          className={`text-xl font-black ${npc.current_hp <= npc.max_hp / 4 ? "text-red-500" : "text-emerald-400"}`}
-                        >
-                          {npc.current_hp}{" "}
-                          <span className="text-sm text-slate-500 font-normal">
-                            / {npc.max_hp}
-                          </span>
-                        </p>
+
+                      {/* HP Progress Bar */}
+                      <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-slate-700">
+                        <div
+                          className={`h-full transition-all duration-300 ${
+                            npc.current_hp <= npc.max_hp / 4
+                              ? "bg-red-500"
+                              : npc.current_hp <= npc.max_hp / 2
+                                ? "bg-amber-400"
+                                : "bg-emerald-500"
+                          }`}
+                          style={{
+                            width: `${Math.max(0, Math.min(100, (npc.current_hp / npc.max_hp) * 100))}%`,
+                          }}
+                        />
+                      </div>
+
+                      {/* Quick HP Adjustment Buttons */}
+                      <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-700/50">
+                        <span className="text-[11px] text-slate-400 font-medium">
+                          Modificar HP:
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => handleNpcHpQuickChange(npc, -5)}
+                            className="px-2 py-0.5 text-xs font-bold bg-red-950/60 hover:bg-red-900 border border-red-800/50 text-red-300 rounded transition-colors"
+                            title="Reducir 5 HP"
+                          >
+                            -5
+                          </button>
+                          <button
+                            onClick={() => handleNpcHpQuickChange(npc, -1)}
+                            className="px-2 py-0.5 text-xs font-bold bg-red-950/60 hover:bg-red-900 border border-red-800/50 text-red-300 rounded transition-colors"
+                            title="Reducir 1 HP"
+                          >
+                            -1
+                          </button>
+                          <button
+                            onClick={() => handleNpcHpQuickChange(npc, 1)}
+                            className="px-2 py-0.5 text-xs font-bold bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-800/50 text-emerald-300 rounded transition-colors"
+                            title="Aumentar 1 HP"
+                          >
+                            +1
+                          </button>
+                          <button
+                            onClick={() => handleNpcHpQuickChange(npc, 5)}
+                            className="px-2 py-0.5 text-xs font-bold bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-800/50 text-emerald-300 rounded transition-colors"
+                            title="Aumentar 5 HP"
+                          >
+                            +5
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -644,12 +751,6 @@ export default function GameRoomPage({
 
                   <div className="space-y-4">
                     <button
-                      onClick={() => setIsHpModalOpen(true)}
-                      className="w-full py-2 bg-slate-900 border border-slate-700 hover:border-purple-500 text-slate-300 rounded transition-colors text-sm"
-                    >
-                      + Modificar HP de Personaje
-                    </button>
-                    <button
                       onClick={() => setIsNpcModalOpen(true)}
                       className="w-full py-2 bg-slate-900 border border-slate-700 hover:border-purple-500 text-slate-300 rounded transition-colors text-sm"
                     >
@@ -706,87 +807,6 @@ export default function GameRoomPage({
           </div>
         </div>
       </div>
-      {/* MODAL PARA MODIFICAR HP */}
-      {isHpModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 border border-purple-500/50 p-6 rounded-xl w-full max-w-md shadow-2xl">
-            <h3 className="text-xl font-bold text-purple-400 mb-4">
-              Modificar Puntos de Vida
-            </h3>
-
-            <form onSubmit={handleUpdateHp} className="space-y-4">
-              <div>
-                <label className="block text-sm text-slate-300 mb-1">
-                  Selecciona el Personaje
-                </label>
-                <select
-                  required
-                  value={selectedCharId}
-                  onChange={(e) => {
-                    const charId = Number(e.target.value);
-                    setSelectedCharId(charId);
-                    const target =
-                      game.characters.find((c) => c.id === charId) ??
-                      game.npcs.find((npc) => npc.id === charId);
-                    if (target) setNewHp(target.current_hp);
-                  }}
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded focus:border-purple-500 text-slate-100"
-                >
-                  <option value="">-- Elige un personaje --</option>
-                  {game.characters.map((char) => (
-                    <option key={`char-${char.id}`} value={char.id}>
-                      {char.name} (Jugador - {char.current_hp}/{char.max_hp} HP)
-                    </option>
-                  ))}
-                  {game.npcs.map((npc) => (
-                    <option key={`npc-${npc.id}`} value={npc.id}>
-                      {npc.name} (Enemigo - {npc.current_hp}/{npc.max_hp} HP)
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm text-slate-300 mb-1">
-                  Nuevo HP Actual
-                </label>
-                <input
-                  type="number"
-                  required
-                  min={0}
-                  value={newHp}
-                  onChange={(e) =>
-                    setNewHp(
-                      e.target.value === "" ? "" : Number(e.target.value),
-                    )
-                  }
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded focus:border-purple-500 text-slate-100 text-lg font-bold"
-                />
-              </div>
-
-              <div className="flex gap-3 mt-6">
-                <button
-                  type="button"
-                  onClick={() => setIsHpModalOpen(false)}
-                  className="flex-1 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={
-                    isUpdatingHp || selectedCharId === "" || newHp === ""
-                  }
-                  className="flex-1 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded transition-colors disabled:opacity-50"
-                >
-                  {isUpdatingHp ? "Guardando..." : "Guardar HP"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* MODAL PARA CREAR ENEMIGO (NPC) */}
       {isNpcModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
