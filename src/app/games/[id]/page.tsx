@@ -588,108 +588,134 @@ export default function GameRoomPage({
                 </p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {game.npcs.map((npc) => (
-                    <div
-                      key={npc.id}
-                      className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow space-y-3"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h3 className="font-bold text-lg text-slate-200">
-                            {npc.name}
-                          </h3>
-                          <p className="text-xs text-slate-400">
-                            {npc.race || "Enemigo"}{" "}
-                            {npc.class ? `- ${npc.class}` : ""}{" "}
-                            {npc.level ? `(Niv. ${npc.level})` : ""}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="text-right">
-                            <p className="text-[11px] font-bold text-slate-400">
-                              HP
-                            </p>
-                            <p
-                              className={`text-lg font-black ${
-                                npc.current_hp <= npc.max_hp / 4
-                                  ? "text-red-500"
-                                  : npc.current_hp <= npc.max_hp / 2
-                                    ? "text-amber-400"
-                                    : "text-emerald-400"
-                              }`}
-                            >
-                              {npc.current_hp}{" "}
-                              <span className="text-xs text-slate-500 font-normal">
-                                / {npc.max_hp}
-                              </span>
+                  {game.npcs.map((npc) => {
+                    const hpPercent = npc.max_hp > 0 ? npc.current_hp / npc.max_hp : 0;
+                    const statusLabel = npc.current_hp <= 0
+                      ? "💀 Derrotado"
+                      : hpPercent <= 0.25
+                        ? "🩸 Crítico"
+                        : hpPercent <= 0.5
+                          ? "🟠 Herido"
+                          : "🟢 Saludable";
+                    const statusColor = npc.current_hp <= 0
+                      ? "text-slate-500"
+                      : hpPercent <= 0.25
+                        ? "text-red-400"
+                        : hpPercent <= 0.5
+                          ? "text-amber-400"
+                          : "text-emerald-400";
+
+                    return (
+                      <div
+                        key={npc.id}
+                        className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow space-y-3"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h3 className="font-bold text-lg text-slate-200">
+                              {npc.name}
+                            </h3>
+                            <p className="text-xs text-slate-400">
+                              {npc.race || "Enemigo"}{" "}
+                              {npc.class ? `- ${npc.class}` : ""}{" "}
+                              {npc.level ? `(Niv. ${npc.level})` : ""}
                             </p>
                           </div>
-                          {isMaster && (
-                            <button
-                              onClick={() => handleDeleteNpc(npc.id, npc.name)}
-                              className="text-slate-400 hover:text-red-400 p-1 rounded hover:bg-slate-700/60 transition-colors ml-1"
-                              title="Eliminar enemigo"
-                            >
-                              🗑️
-                            </button>
+
+                          {isMaster ? (
+                            <div className="flex items-center gap-2">
+                              <div className="text-right">
+                                <p className="text-[11px] font-bold text-slate-400">
+                                  HP
+                                </p>
+                                <p
+                                  className={`text-lg font-black ${
+                                    hpPercent <= 0.25
+                                      ? "text-red-500"
+                                      : hpPercent <= 0.5
+                                        ? "text-amber-400"
+                                        : "text-emerald-400"
+                                  }`}
+                                >
+                                  {npc.current_hp}{" "}
+                                  <span className="text-xs text-slate-500 font-normal">
+                                    / {npc.max_hp}
+                                  </span>
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => handleDeleteNpc(npc.id, npc.name)}
+                                className="text-slate-400 hover:text-red-400 p-1 rounded hover:bg-slate-700/60 transition-colors ml-1"
+                                title="Eliminar enemigo"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          ) : (
+                            <span className={`text-sm font-bold ${statusColor}`}>
+                              {statusLabel}
+                            </span>
                           )}
                         </div>
-                      </div>
 
-                      {/* HP Progress Bar */}
-                      <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-slate-700">
-                        <div
-                          className={`h-full transition-all duration-300 ${
-                            npc.current_hp <= npc.max_hp / 4
-                              ? "bg-red-500"
-                              : npc.current_hp <= npc.max_hp / 2
-                                ? "bg-amber-400"
-                                : "bg-emerald-500"
-                          }`}
-                          style={{
-                            width: `${Math.max(0, Math.min(100, (npc.current_hp / npc.max_hp) * 100))}%`,
-                          }}
-                        />
-                      </div>
+                        {/* HP Progress Bar & Controls — solo DM */}
+                        {isMaster && (
+                          <>
+                            <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-slate-700">
+                              <div
+                                className={`h-full transition-all duration-300 ${
+                                  hpPercent <= 0.25
+                                    ? "bg-red-500"
+                                    : hpPercent <= 0.5
+                                      ? "bg-amber-400"
+                                      : "bg-emerald-500"
+                                }`}
+                                style={{
+                                  width: `${Math.max(0, Math.min(100, hpPercent * 100))}%`,
+                                }}
+                              />
+                            </div>
 
-                      {/* Quick HP Adjustment Buttons */}
-                      <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-700/50">
-                        <span className="text-[11px] text-slate-400 font-medium">
-                          Modificar HP:
-                        </span>
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => handleNpcHpQuickChange(npc, -5)}
-                            className="px-2 py-0.5 text-xs font-bold bg-red-950/60 hover:bg-red-900 border border-red-800/50 text-red-300 rounded transition-colors"
-                            title="Reducir 5 HP"
-                          >
-                            -5
-                          </button>
-                          <button
-                            onClick={() => handleNpcHpQuickChange(npc, -1)}
-                            className="px-2 py-0.5 text-xs font-bold bg-red-950/60 hover:bg-red-900 border border-red-800/50 text-red-300 rounded transition-colors"
-                            title="Reducir 1 HP"
-                          >
-                            -1
-                          </button>
-                          <button
-                            onClick={() => handleNpcHpQuickChange(npc, 1)}
-                            className="px-2 py-0.5 text-xs font-bold bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-800/50 text-emerald-300 rounded transition-colors"
-                            title="Aumentar 1 HP"
-                          >
-                            +1
-                          </button>
-                          <button
-                            onClick={() => handleNpcHpQuickChange(npc, 5)}
-                            className="px-2 py-0.5 text-xs font-bold bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-800/50 text-emerald-300 rounded transition-colors"
-                            title="Aumentar 5 HP"
-                          >
-                            +5
-                          </button>
-                        </div>
+                            <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-700/50">
+                              <span className="text-[11px] text-slate-400 font-medium">
+                                Modificar HP:
+                              </span>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => handleNpcHpQuickChange(npc, -5)}
+                                  className="px-2 py-0.5 text-xs font-bold bg-red-950/60 hover:bg-red-900 border border-red-800/50 text-red-300 rounded transition-colors"
+                                  title="Reducir 5 HP"
+                                >
+                                  -5
+                                </button>
+                                <button
+                                  onClick={() => handleNpcHpQuickChange(npc, -1)}
+                                  className="px-2 py-0.5 text-xs font-bold bg-red-950/60 hover:bg-red-900 border border-red-800/50 text-red-300 rounded transition-colors"
+                                  title="Reducir 1 HP"
+                                >
+                                  -1
+                                </button>
+                                <button
+                                  onClick={() => handleNpcHpQuickChange(npc, 1)}
+                                  className="px-2 py-0.5 text-xs font-bold bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-800/50 text-emerald-300 rounded transition-colors"
+                                  title="Aumentar 1 HP"
+                                >
+                                  +1
+                                </button>
+                                <button
+                                  onClick={() => handleNpcHpQuickChange(npc, 5)}
+                                  className="px-2 py-0.5 text-xs font-bold bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-800/50 text-emerald-300 rounded transition-colors"
+                                  title="Aumentar 5 HP"
+                                >
+                                  +5
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </section>
