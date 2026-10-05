@@ -2,15 +2,27 @@
 
 import { useState } from "react";
 import {
+  AbilityStat,
   AdvantageMode,
+  AttackRollResult,
   CharacterRollResult,
   RollEntry,
+  isAttack,
   isCharacterRoll,
 } from "@/types/game";
 
 interface RollHistoryProps {
   history: RollEntry[];
 }
+
+const ABILITY_LABELS: Record<AbilityStat, string> = {
+  strength: "Fuerza",
+  dexterity: "Destreza",
+  constitution: "Constitución",
+  intelligence: "Inteligencia",
+  wisdom: "Sabiduría",
+  charisma: "Carisma",
+};
 
 function advantageLabel(advantage: AdvantageMode): string | null {
   if (advantage === "advantage") return "Ventaja";
@@ -23,9 +35,18 @@ function formatModifier(modifier: number): string {
 }
 
 /** Con ventaja o desventaja se tiran dos dados y solo cuenta uno. */
-function formatDice(roll: CharacterRollResult): string {
+function formatDice(roll: { dice: number[]; kept: number }): string {
   const all = roll.dice.join(" + ");
   return roll.dice.length > 1 ? `(${all}) → ${roll.kept}` : all;
+}
+
+/** Daño del arma: los dados y encima el atributo, por ejemplo `5 + 3`. */
+function formatDamage(roll: AttackRollResult): string {
+  const dice = roll.damageDice?.join(" + ") ?? "0";
+  const bonus = roll.abilityModifier;
+
+  if (bonus === 0) return dice;
+  return `${dice} ${bonus > 0 ? "+" : "-"} ${Math.abs(bonus)}`;
 }
 
 function CharacterRollCard({ roll }: { roll: CharacterRollResult }) {
@@ -109,6 +130,105 @@ function CharacterRollRow({ roll }: { roll: CharacterRollResult }) {
   );
 }
 
+function AttackCard({ roll }: { roll: AttackRollResult }) {
+  const adv = advantageLabel(roll.advantage);
+
+  return (
+    <div className="bg-slate-950 p-3.5 rounded-lg border border-red-500/40 space-y-2 shadow-inner">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-bold text-red-400 truncate">
+          {roll.attackerName}
+          <span className="mx-1.5 text-slate-500">⚔</span>
+          <span className="text-slate-300">{roll.targetName}</span>
+        </span>
+        <span className="text-[11px] font-semibold text-slate-300 shrink-0">
+          {roll.weapon}
+          {adv && <span className="text-slate-500"> · {adv}</span>}
+        </span>
+      </div>
+
+      <div className="flex items-baseline justify-between gap-3 pt-1">
+        <div className="text-xs text-slate-400 space-y-0.5 min-w-0">
+          <div className="font-mono text-slate-300 truncate">
+            {formatDice(roll)}
+          </div>
+          <div>
+            Mod {formatModifier(roll.modifier)}
+            <span className="text-slate-500">
+              {" "}
+              · {ABILITY_LABELS[roll.ability]}
+            </span>
+          </div>
+        </div>
+
+        <div className="text-right shrink-0">
+          <div className="text-3xl font-extrabold font-mono text-red-400 tracking-tight">
+            {roll.total}
+          </div>
+          <div className="text-[11px] font-bold font-mono text-slate-400">
+            CA {roll.targetAc}
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-slate-800 pt-1.5 space-y-0.5">
+        <p
+          className={`text-xs font-bold ${roll.hit ? "text-emerald-400" : "text-red-400"}`}
+        >
+          {roll.hit
+            ? roll.critical
+              ? "¡Crítico! ✓"
+              : "¡Golpe! ✓"
+            : "Fallo ✗"}
+        </p>
+        {roll.hit && roll.damageTotal !== undefined && (
+          <p className="text-xs text-slate-300">
+            Daño{" "}
+            <span className="font-mono font-bold text-amber-300">
+              {roll.damageTotal}
+            </span>{" "}
+            <span className="text-slate-500">
+              ({formatDamage(roll)}) · {roll.damageType}
+            </span>
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AttackRow({ roll }: { roll: AttackRollResult }) {
+  const adv = advantageLabel(roll.advantage);
+
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs p-2 bg-slate-900/80 rounded border border-slate-800 hover:border-slate-700 transition-colors">
+      <div className="flex-1 min-w-0">
+        <span className="font-semibold text-slate-200">{roll.attackerName}</span>
+        <span className="text-slate-500 mx-1">atacó a</span>
+        <span className="font-semibold text-slate-200">{roll.targetName}</span>
+        <span className="text-slate-600"> ({roll.weapon}</span>
+        {adv && <span className="text-slate-600">, {adv.toLowerCase()}</span>}
+        <span className="text-slate-600">)</span>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <span
+          className={`text-[10px] font-bold ${roll.hit ? "text-emerald-400" : "text-red-400"}`}
+        >
+          {roll.hit ? "✓" : "✗"}
+        </span>
+        <span className="text-[11px] text-slate-400 font-mono">
+          {roll.total} vs CA {roll.targetAc}
+        </span>
+        {roll.hit && roll.damageTotal !== undefined && (
+          <span className="text-[11px] text-amber-300 font-mono font-bold">
+            {roll.damageTotal}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function RollHistory({ history }: RollHistoryProps) {
   const [showFullHistory, setShowFullHistory] = useState(false);
 
@@ -133,6 +253,8 @@ export default function RollHistory({ history }: RollHistoryProps) {
             No hay tiradas recientes. Selecciona un dado para lanzar.
           </p>
         </div>
+      ) : isAttack(latestRoll) ? (
+        <AttackCard roll={latestRoll} />
       ) : isCharacterRoll(latestRoll) ? (
         <CharacterRollCard roll={latestRoll} />
       ) : (
@@ -184,7 +306,9 @@ export default function RollHistory({ history }: RollHistoryProps) {
       {showFullHistory && history.length > 0 && (
         <div className="max-h-60 overflow-y-auto space-y-1.5 pt-2 border-t border-slate-700/80 pr-1">
           {reversedHistory.map((roll, idx) =>
-            isCharacterRoll(roll) ? (
+            isAttack(roll) ? (
+              <AttackRow key={idx} roll={roll} />
+            ) : isCharacterRoll(roll) ? (
               <CharacterRollRow key={idx} roll={roll} />
             ) : (
               <div

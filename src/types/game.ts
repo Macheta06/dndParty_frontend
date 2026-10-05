@@ -75,7 +75,40 @@ export interface CharacterRollResult {
   characterName: string;
 }
 
-export type RollEntry = DiceRollResult | CharacterRollResult;
+/**
+ * Ataque ya resuelto por el server: qué arma empuñaba, qué atributo eligió,
+ * si le dio a la CA del objetivo y cuánto dolió (el daño solo llega si acertó).
+ */
+export interface AttackRollResult {
+  weapon: string;
+  damage: string;
+  damageType: string;
+  ability: AbilityStat;
+  abilityModifier: number;
+  /** Bono sobre el d20: atributo + competencia. */
+  modifier: number;
+  advantage: AdvantageMode;
+  dice: number[];
+  kept: number;
+  total: number;
+  targetAc: number;
+  hit: boolean;
+  /** Dado 20: acierta siempre y duplica los dados de daño. */
+  critical: boolean;
+  damageDice?: number[];
+  damageTotal?: number;
+  userId: number;
+  userName: string;
+  attackerId: number;
+  attackerName: string;
+  targetId: number;
+  targetName: string;
+}
+
+export type RollEntry =
+  | DiceRollResult
+  | CharacterRollResult
+  | AttackRollResult;
 
 /**
  * Lo que la hoja pide tirar. El page le agrega el `gameId` antes de emitir:
@@ -88,11 +121,26 @@ export interface CharacterRollRequest {
   advantage?: AdvantageMode;
 }
 
-/** `DiceRollResult` no trae `label`: con eso se distingue una de la otra. */
+/** Igual que en las tiradas: el cliente solo dice quién contra quién. */
+export interface AttackRequest {
+  attackerId: number;
+  targetId: number;
+  advantage?: AdvantageMode;
+}
+
+/**
+ * `DiceRollResult` no trae `label` ni `attackerName`; con eso se distingue de
+ * las otras dos formas de tirada.
+ */
 export function isCharacterRoll(
   entry: RollEntry,
 ): entry is CharacterRollResult {
   return "label" in entry;
+}
+
+/** Los ataques son la única tirada que menciona al objetivo. */
+export function isAttack(entry: RollEntry): entry is AttackRollResult {
+  return "attackerName" in entry;
 }
 
 export interface GameDetail extends Game {

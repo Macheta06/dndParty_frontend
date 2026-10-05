@@ -9,6 +9,7 @@ import {
   CreateNoteDto,
 } from "@/services/game.service";
 import {
+  AttackRollResult,
   CharacterRollResult,
   DiceRollResult,
   GameDetail,
@@ -21,6 +22,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import InitiativeTracker from "@/components/InitiativeTracker";
 import DiceRoller from "@/components/DiceRoller";
+import CombatPanel from "@/components/CombatPanel";
 import RollHistory from "@/components/RollHistory";
 import Chat from "@/components/Chat";
 import Equipment from "@/components/Equipment";
@@ -180,6 +182,10 @@ export default function GameRoomPage({
 
     socket.on("characterRolled", (roll: CharacterRollResult) => {
       setRollHistory((previous) => [...previous, roll].slice(-10));
+    });
+
+    socket.on("attackResolved", (attack: AttackRollResult) => {
+      setRollHistory((previous) => [...previous, attack].slice(-10));
     });
 
     socket.on("xpGranted", (data: { characterId: number; exp: number }) => {
@@ -784,6 +790,14 @@ export default function GameRoomPage({
               />
 
               <DiceRoller socket={activeSocket} />
+
+              <CombatPanel
+                socket={activeSocket}
+                gameId={gameId}
+                characters={[...game.characters, ...game.npcs]}
+                userId={user?.id}
+                isMaster={isMaster}
+              />
 
               <RollHistory history={rollHistory} />
 
