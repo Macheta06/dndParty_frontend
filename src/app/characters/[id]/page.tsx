@@ -1228,6 +1228,7 @@ export default function CharacterDetailPage() {
                           item={item}
                           equipped={isEquipped}
                           canEquip
+                          equipment={currentEquipment}
                           onToggle={handleToggleEquip}
                         />
                       </span>

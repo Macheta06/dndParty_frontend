@@ -1062,6 +1062,7 @@ export default function CharacterSheetModal({
                               item={item}
                               equipped={isEquipped}
                               canEquip={isOwner}
+                              equipment={currentEquipment}
                               onToggle={handleToggleEquip}
                             />
                             {isOwner && (

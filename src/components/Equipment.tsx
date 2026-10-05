@@ -203,6 +203,7 @@ export default function Equipment({
               item={item}
               equipped={isEquipped}
               canEquip={isOwner}
+              equipment={items}
               onToggle={handleToggle}
             />
             {isOwner && (

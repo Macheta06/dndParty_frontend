@@ -1,7 +1,4 @@
-import type {
-  EquipmentItem,
-  EquipmentSlot,
-} from "@/constants/dnd";
+import type { EquipmentItem, EquipmentSlot } from "@/constants/dnd";
 import { SRD_ITEMS, SrdItem } from "@/constants/item-catalog";
 
 /** Normaliza un nombre para compararlo con el catálogo. */
@@ -55,6 +52,59 @@ export function getAllowedSlots(item: EquipmentItem): EquipmentSlot[] {
 
 export function isEquippable(item: EquipmentItem): boolean {
   return getAllowedSlots(item).length > 0;
+}
+
+/**
+ * Motivo por el que `item` no puede ocupar `slot` con lo que hay equipado
+ * ahora mismo, o `null` si puede.
+ *
+ * Espejo de las reglas del server, que sigue siendo quien decide (este solo
+ * sirve para no ofrecer un botón que va a fallar siempre). Las dos manos son
+ * dos: el arma principal ocupa una, y escudo y arma secundaria disputan la
+ * otra.
+ */
+export function slotConflict(
+  item: EquipmentItem,
+  slot: EquipmentSlot,
+  equipment: EquipmentItem[],
+): string | null {
+  const self = normalizeItemName(item.name);
+  const others = equipment.filter((i) => normalizeItemName(i.name) !== self);
+
+  const shield = others.find((i) => i.slot === "shield");
+  const offhand = others.find((i) => i.slot === "weapon-offhand");
+  const main = others.find((i) => i.slot === "weapon-main");
+  const mainTwoHander =
+    main !== undefined && resolveItem(main).stats?.twoHanded === true;
+
+  if (slot === "shield") {
+    if (mainTwoHander && main) return `«${main.name}» ocupa ambas manos`;
+    if (offhand) return `«${offhand.name}» ocupa la otra mano`;
+    return null;
+  }
+
+  if (slot === "weapon-offhand") {
+    if (mainTwoHander && main) return `«${main.name}» ocupa ambas manos`;
+    if (shield) return `«${shield.name}» ocupa esa mano`;
+    return null;
+  }
+
+  if (slot === "weapon-main") {
+    const resolved = resolveItem(item);
+    const isTwoHander =
+      resolved.category === "weapon" && resolved.stats?.twoHanded === true;
+    if (!isTwoHander) return null;
+
+    const blockers = [shield, offhand].filter(
+      (i): i is EquipmentItem => i !== undefined,
+    );
+    if (blockers.length === 0) return null;
+
+    const names = blockers.map((i) => i.name).join(", ");
+    return `necesita ambas manos y ${names} ya ${blockers.length > 1 ? "la ocupan" : "la ocupa"}`;
+  }
+
+  return null;
 }
 
 export const SLOT_LABELS: Record<EquipmentSlot, string> = {

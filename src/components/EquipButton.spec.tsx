@@ -5,11 +5,43 @@ import userEvent from "@testing-library/user-event";
 import type { EquipmentItem, EquipmentSlot } from "@/constants/dnd";
 import EquipButton from "./EquipButton";
 
-const item = (name: string, extra: Partial<EquipmentItem> = {}): EquipmentItem => ({
+const item = (
+  name: string,
+  extra: Partial<EquipmentItem> = {},
+): EquipmentItem => ({
   name,
   quantity: 1,
   ...extra,
 });
+
+type Toggle = ((item: EquipmentItem, slot?: EquipmentSlot) => void) & {
+  mock: { calls: unknown[][] };
+};
+
+interface HarnessProps {
+  target: EquipmentItem;
+  equipped?: boolean;
+  equipment?: EquipmentItem[];
+  onToggle?: Toggle;
+}
+
+function renderTarget({
+  target,
+  equipped = false,
+  equipment = [target],
+  onToggle = vi.fn() as unknown as Toggle,
+}: HarnessProps) {
+  render(
+    <EquipButton
+      item={target}
+      equipped={equipped}
+      canEquip
+      equipment={equipment}
+      onToggle={onToggle}
+    />,
+  );
+  return onToggle;
+}
 
 describe("EquipButton", () => {
   it("renders nothing for non-equippable gear", () => {
@@ -18,6 +50,7 @@ describe("EquipButton", () => {
         item={item("Mochila")}
         equipped={false}
         canEquip
+        equipment={[]}
         onToggle={vi.fn()}
       />,
     );
@@ -31,6 +64,7 @@ describe("EquipButton", () => {
         item={item("Cota de mallas")}
         equipped={false}
         canEquip={false}
+        equipment={[]}
         onToggle={vi.fn()}
       />,
     );
@@ -39,15 +73,7 @@ describe("EquipButton", () => {
   });
 
   it("asks the server for the only allowed slot when equipping armor", async () => {
-    const onToggle = vi.fn();
-    render(
-      <EquipButton
-        item={item("Cota de mallas")}
-        equipped={false}
-        canEquip
-        onToggle={onToggle}
-      />,
-    );
+    const onToggle = renderTarget({ target: item("Cota de mallas") });
 
     await userEvent.click(screen.getByRole("button", { name: "Equipar" }));
 
@@ -57,16 +83,11 @@ describe("EquipButton", () => {
     );
   });
 
-  it("offers both hands for a one-handed weapon so the offhand is reachable", async () => {
-    const onToggle = vi.fn();
-    render(
-      <EquipButton
-        item={item("Daga")}
-        equipped={false}
-        canEquip
-        onToggle={onToggle}
-      />,
-    );
+  it("offers both hands for a one-handed weapon when they are free", async () => {
+    const onToggle = renderTarget({
+      target: item("Daga"),
+      equipment: [item("Daga")],
+    });
 
     await userEvent.click(screen.getByRole("button", { name: "Secundaria" }));
 
@@ -77,33 +98,83 @@ describe("EquipButton", () => {
   });
 
   it("offers only the main hand for a two-handed weapon", () => {
-    render(
-      <EquipButton
-        item={item("Gran hacha")}
-        equipped={false}
-        canEquip
-        onToggle={vi.fn()}
-      />,
-    );
+    renderTarget({ target: item("Gran hacha") });
 
     expect(screen.queryByRole("button", { name: "Secundaria" })).toBeNull();
     expect(screen.getByRole("button", { name: "Equipar" })).toBeTruthy();
   });
 
   it("drops the slot argument when unequipping", async () => {
-    const onToggle = vi.fn();
-    render(
-      <EquipButton
-        item={item("Escudo", { slot: "shield" as EquipmentSlot })}
-        equipped
-        canEquip
-        onToggle={onToggle}
-      />,
-    );
+    const onToggle = renderTarget({
+      target: item("Escudo", { slot: "shield" as EquipmentSlot }),
+      equipped: true,
+    });
 
     await userEvent.click(screen.getByRole("button", { name: "Desequipar" }));
 
     expect(onToggle).toHaveBeenCalledTimes(1);
     expect(onToggle.mock.calls[0]).toHaveLength(1);
+  });
+
+  describe("with a shield equipped", () => {
+    const withShield = [item("Escudo", { slot: "shield" as EquipmentSlot })];
+
+    it("does not offer the offhand for a one-handed weapon", () => {
+      renderTarget({
+        target: item("Espada corta"),
+        equipment: withShield,
+      });
+
+      expect(screen.queryByRole("button", { name: "Secundaria" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Equipar" })).toBeTruthy();
+    });
+
+    it("still offers the main hand for a one-handed weapon", async () => {
+      const onToggle = renderTarget({
+        target: item("Espada larga"),
+        equipment: withShield,
+      });
+
+      await userEvent.click(screen.getByRole("button", { name: "Equipar" }));
+
+      expect(onToggle).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "Espada larga" }),
+        "weapon-main",
+      );
+    });
+
+    it("disables a two-handed weapon instead of offering a click that fails", () => {
+      renderTarget({ target: item("Gran hacha"), equipment: withShield });
+
+      const button = screen.getByRole("button", { name: "Equipar" });
+      expect(button).toBeDisabled();
+      expect(button.getAttribute("title")).toContain("ambas manos");
+    });
+
+    it("hides the shield slot from an already equipped shield's peers", () => {
+      // Un escudo ya equipado no se ofrece como "equipar": se desequipa.
+      renderTarget({
+        target: item("Escudo", { slot: "shield" as EquipmentSlot }),
+        equipped: true,
+        equipment: withShield,
+      });
+
+      expect(screen.getByRole("button", { name: "Desequipar" })).toBeTruthy();
+    });
+  });
+
+  describe("with an offhand weapon equipped", () => {
+    const withOffhand = [
+      item("Daga", { slot: "weapon-main" as EquipmentSlot }),
+      item("Espada corta", { slot: "weapon-offhand" as EquipmentSlot }),
+    ];
+
+    it("does not offer the shield slot", () => {
+      renderTarget({ target: item("Escudo"), equipment: withOffhand });
+
+      const button = screen.getByRole("button", { name: "Equipar" });
+      expect(button).toBeDisabled();
+      expect(button.getAttribute("title")).toContain("otra mano");
+    });
   });
 });
