@@ -23,6 +23,7 @@ import {
   DND_BACKGROUNDS,
   DND_ALIGNMENTS,
   DND_SKILLS,
+  DND_SAVES,
   getClassLabel,
   getRaceLabel,
   getBackgroundLabel,
@@ -687,13 +688,24 @@ export default function CharacterDetailPage() {
               Puntuaciones de Atributos y Competencias
             </h2>
             <span className="text-xs text-slate-400">
-              Haz clic en cualquier habilidad para marcar o desmarcar competencia
+              Haz clic en una salvación o habilidad para marcar o desmarcar
+              competencia
             </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {STAT_KEYS.map((key) => {
-              const statSkills = DND_SKILLS.filter((s) => s.stat === key);
+              // La salvación encabeza el bloque: es lo único que ese
+              // atributo comparte con todas las tiradas del personaje.
+              const statEntries = [
+                ...DND_SAVES.filter((save) => save.stat === key).map((save) => ({
+                  id: save.id,
+                  name: save.name,
+                })),
+                ...DND_SKILLS.filter((skill) => skill.stat === key).map(
+                  (skill) => ({ id: skill.id, name: skill.name }),
+                ),
+              ];
               const currentProfs = (character.proficiencies as string[]) || [];
               const profBonus = getProficiencyBonus(character.level);
 
@@ -739,28 +751,28 @@ export default function CharacterDetailPage() {
 
                   {/* Lista de Competencias asociadas */}
                   <div className="space-y-1.5 flex-1">
-                    {statSkills.length === 0 ? (
+                    {statEntries.length === 0 ? (
                       <p className="text-[11px] text-slate-500 italic py-2 text-center">
                         Sin competencias de característica
                       </p>
                     ) : (
-                      statSkills.map((skill) => {
-                        const isProf = currentProfs.includes(skill.name);
+                      statEntries.map((entry) => {
+                        const isProf = currentProfs.includes(entry.name);
                         const statVal = Number(character[key] ?? 10);
                         const statMod = Math.floor((statVal - 10) / 2);
                         const totalMod = statMod + (isProf ? profBonus : 0);
                         const modStr =
                           totalMod >= 0 ? `+${totalMod}` : `${totalMod}`;
                         const source = getProficiencySource(
-                          skill.name,
+                          entry.name,
                           character.background,
                           character.race,
                         );
 
                         return (
                           <div
-                            key={skill.id}
-                            onClick={() => handleToggleProficiency(skill.name)}
+                            key={entry.id}
+                            onClick={() => handleToggleProficiency(entry.name)}
                             className={`flex items-center justify-between p-2 rounded text-xs cursor-pointer transition-all ${
                               isProf
                                 ? "bg-amber-500/10 border border-amber-500/30 hover:border-amber-500/60"
@@ -781,7 +793,7 @@ export default function CharacterDetailPage() {
                                     : "text-slate-300"
                                 }`}
                               >
-                                {skill.name}
+                                {entry.name}
                               </span>
                               {source && (
                                 <span
