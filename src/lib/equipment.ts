@@ -59,9 +59,10 @@ export function isEquippable(item: EquipmentItem): boolean {
  * ahora mismo, o `null` si puede.
  *
  * Espejo de las reglas del server, que sigue siendo quien decide (este solo
- * sirve para no ofrecer un botón que va a fallar siempre). Las dos manos son
- * dos: el arma principal ocupa una, y escudo y arma secundaria disputan la
- * otra.
+ * sirve para no ofrecer un botón que va a fallar siempre). Los huecos:
+ * el arma principal ocupa una mano y no se pisa en silencio, así que con ella
+ * equipada otra arma solo cabe en la secundaria; escudo y arma secundaria
+ * disputan la otra mano.
  */
 export function slotConflict(
   item: EquipmentItem,
@@ -90,6 +91,10 @@ export function slotConflict(
   }
 
   if (slot === "weapon-main") {
+    // Con otra arma equipada, esta solo cabe en la secundaria: si no, el
+    // click terminaría pisando el arma actual en silencio.
+    if (main) return `«${main.name}» ya está en la mano principal`;
+
     const resolved = resolveItem(item);
     const isTwoHander =
       resolved.category === "weapon" && resolved.stats?.twoHanded === true;

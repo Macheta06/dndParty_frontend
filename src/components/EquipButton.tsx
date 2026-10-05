@@ -26,13 +26,20 @@ interface EquipButtonProps {
 const IDLE_BUTTON =
   "text-[11px] px-2 py-0.5 rounded border font-semibold border-slate-600 text-slate-400 hover:text-slate-200 hover:border-slate-500";
 
+/** Nombre corto de las manos, que son los únicos slots con más de un hueco. */
+const HAND_LABELS: Partial<Record<EquipmentSlot, string>> = {
+  "weapon-main": "Principal",
+  "weapon-offhand": "Secundaria",
+};
+
 /**
  * Botón de equipar/desequipar compartido por las tres vistas de inventario.
  *
  * Un arma a una mano admite dos slots, así que ofrece las dos manos en lugar
- * de elegir en silencio. Los slots que no caben en las manos disponibles no
- * se ofrecen: en vez de mandar un click que el server va a rechazar, queda
- * un botón deshabilitado con el motivo.
+ * de elegir en silencio. Con el arma principal ocupada solo queda la
+ * secundaria —cambiar de arma principal exige desequipar antes— y lo que no
+ * cabe en las manos libres no se ofrece: en vez de mandar un click que el
+ * server va a rechazar, queda un botón deshabilitado con los motivos.
  */
 export default function EquipButton({
   item,
@@ -62,8 +69,14 @@ export default function EquipButton({
   );
 
   if (available.length === 0) {
+    // Si no cabe en ningún hueco, el tooltip junta todos los motivos: con la
+    // mano principal ocupada y el escudo puesto, "desequipar el arma" no basta.
+    const reasons = allowed
+      .map((slot) => slotConflict(item, slot, equipment))
+      .filter((reason): reason is string => reason !== null);
+
     const reason =
-      slotConflict(item, allowed[0], equipment) ?? "Las manos están ocupadas";
+      reasons.length > 0 ? reasons.join(" · ") : "Las manos están ocupadas";
 
     return (
       <button
@@ -79,6 +92,11 @@ export default function EquipButton({
 
   if (available.length === 1) {
     const slot = available[0];
+    // Si el objeto admite varios huecos y solo queda uno libre, el nombre del
+    // botón dice a dónde va: nunca se elige en silencio.
+    const label =
+      allowed.length > 1 ? (HAND_LABELS[slot] ?? "Equipar") : "Equipar";
+
     return (
       <button
         type="button"
@@ -86,7 +104,7 @@ export default function EquipButton({
         className={IDLE_BUTTON}
         title={`Equipar en ${SLOT_LABELS[slot]}`}
       >
-        Equipar
+        {label}
       </button>
     );
   }
@@ -101,7 +119,7 @@ export default function EquipButton({
           className={IDLE_BUTTON}
           title={`Equipar en ${SLOT_LABELS[slot]}`}
         >
-          {slot === "weapon-main" ? "Principal" : "Secundaria"}
+          {HAND_LABELS[slot] ?? SLOT_LABELS[slot]}
         </button>
       ))}
     </span>

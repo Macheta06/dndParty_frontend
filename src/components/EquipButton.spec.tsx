@@ -126,7 +126,8 @@ describe("EquipButton", () => {
       });
 
       expect(screen.queryByRole("button", { name: "Secundaria" })).toBeNull();
-      expect(screen.getByRole("button", { name: "Equipar" })).toBeTruthy();
+      // Solo queda la mano principal libre, y el botón lo dice.
+      expect(screen.getByRole("button", { name: "Principal" })).toBeTruthy();
     });
 
     it("still offers the main hand for a one-handed weapon", async () => {
@@ -135,7 +136,7 @@ describe("EquipButton", () => {
         equipment: withShield,
       });
 
-      await userEvent.click(screen.getByRole("button", { name: "Equipar" }));
+      await userEvent.click(screen.getByRole("button", { name: "Principal" }));
 
       expect(onToggle).toHaveBeenCalledWith(
         expect.objectContaining({ name: "Espada larga" }),
@@ -175,6 +176,52 @@ describe("EquipButton", () => {
       const button = screen.getByRole("button", { name: "Equipar" });
       expect(button).toBeDisabled();
       expect(button.getAttribute("title")).toContain("otra mano");
+    });
+  });
+
+  describe("with a main weapon equipped", () => {
+    const withMain = [
+      item("Espada larga", { slot: "weapon-main" as EquipmentSlot }),
+    ];
+
+    it("sends a second one-handed weapon to the offhand only", async () => {
+      const onToggle = renderTarget({
+        target: item("Espada corta"),
+        equipment: withMain,
+      });
+
+      expect(screen.queryByRole("button", { name: "Principal" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Equipar" })).toBeNull();
+
+      await userEvent.click(screen.getByRole("button", { name: "Secundaria" }));
+
+      expect(onToggle).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "Espada corta" }),
+        "weapon-offhand",
+      );
+    });
+
+    it("disables a two-handed weapon instead of offering a silent swap", () => {
+      renderTarget({ target: item("Gran hacha"), equipment: withMain });
+
+      const button = screen.getByRole("button", { name: "Equipar" });
+      expect(button).toBeDisabled();
+      expect(button.getAttribute("title")).toContain("Espada larga");
+    });
+
+    it("lists every reason when neither hand is free", () => {
+      renderTarget({
+        target: item("Espada corta"),
+        equipment: [
+          item("Espada larga", { slot: "weapon-main" as EquipmentSlot }),
+          item("Escudo", { slot: "shield" as EquipmentSlot }),
+        ],
+      });
+
+      const button = screen.getByRole("button", { name: "Equipar" });
+      expect(button).toBeDisabled();
+      expect(button.getAttribute("title")).toContain("Espada larga");
+      expect(button.getAttribute("title")).toContain("Escudo");
     });
   });
 });
