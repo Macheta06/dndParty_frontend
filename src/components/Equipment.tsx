@@ -3,15 +3,15 @@
 import { useMemo, useState } from "react";
 import { Socket } from "socket.io-client";
 
-import type { EquipmentItem as EquipmentItemT } from "@/constants/dnd";
+import type { EquipmentItem as EquipmentItemT, EquipmentSlot } from "@/constants/dnd";
 import { SRD_ITEMS, SrdItem } from "@/constants/item-catalog";
+import EquipButton from "@/components/EquipButton";
 import {
   SLOT_ICONS,
   SLOT_LABELS,
   describeItemStats,
   findCatalogItem,
   getAllowedSlots,
-  isEquippable,
   normalizeItemName,
   resolveItem,
 } from "@/lib/equipment";
@@ -161,19 +161,18 @@ export default function Equipment({
     socket.emit("removeEquipment", { gameId, characterId, name, quantity });
   };
 
-  const handleToggle = (item: EquipmentItemT) => {
+  const handleToggle = (item: EquipmentItemT, slot?: EquipmentSlot) => {
     if (!socket) return;
     socket.emit("toggleEquipment", {
       gameId,
       characterId,
       name: item.name,
-      ...(item.slot ? {} : { slot: getAllowedSlots(item)[0] }),
+      ...(item.slot ? {} : { slot: slot ?? getAllowedSlots(item)[0] }),
     });
   };
 
   const renderRow = (item: EquipmentItemT) => {
     const statLine = describeItemStats(item);
-    const equippable = isEquippable(item);
     const isEquipped = Boolean(item.slot);
 
     return (
@@ -200,23 +199,12 @@ export default function Equipment({
             )}
           </div>
           <div className="flex items-center gap-2 ml-2 shrink-0">
-            {equippable && isOwner && (
-              <button
-                onClick={() => handleToggle(item)}
-                className={`text-xs px-1.5 py-0.5 rounded border ${
-                  isEquipped
-                    ? "border-amber-600 text-amber-300 hover:bg-amber-900/50"
-                    : "border-slate-600 text-slate-400 hover:text-slate-200 hover:border-slate-500"
-                }`}
-                title={
-                  isEquipped
-                    ? `Desequipar (${SLOT_LABELS[item.slot!]})`
-                    : `Equipar en ${SLOT_LABELS[getAllowedSlots(item)[0]]}`
-                }
-              >
-                {isEquipped ? "Desequipar" : "Equipar"}
-              </button>
-            )}
+            <EquipButton
+              item={item}
+              equipped={isEquipped}
+              canEquip={isOwner}
+              onToggle={handleToggle}
+            />
             {isOwner && (
               <button
                 onClick={() => handleRemove(item.name, 1)}

@@ -6,13 +6,14 @@ import Link from "next/link";
 import { characterService } from "@/services/character.service";
 import { Character } from "@/types/character";
 import { SRD_ITEMS, SrdItem } from "@/constants/item-catalog";
+import { apiErrorMessage } from "@/lib/api-error";
+import EquipButton from "@/components/EquipButton";
 import {
   SLOT_ICONS,
   SLOT_LABELS,
   describeItemStats,
   findCatalogItem,
   getAllowedSlots,
-  isEquippable,
   normalizeItemName,
   resolveItem,
 } from "@/lib/equipment";
@@ -31,6 +32,7 @@ import {
   getProficiencySource,
   getStartingFeats,
   EquipmentItem,
+  EquipmentSlot,
   FeatItem,
 } from "@/constants/dnd";
 import { CharacterSheetSkeleton } from "@/components/Skeletons";
@@ -392,9 +394,9 @@ export default function CharacterDetailPage() {
       if (saved?.armor !== undefined) {
         setCharacter((prev) => (prev ? { ...prev, armor: saved.armor } : null));
       }
-    } catch {
+    } catch (err: unknown) {
       setCharacter((prev) => (prev ? { ...prev, equipment: currentEquip } : null));
-      setError("Error al agregar objeto");
+      setError(apiErrorMessage(err, "Error al agregar objeto"));
     }
   };
 
@@ -402,7 +404,10 @@ export default function CharacterDetailPage() {
    * Equipa/desequipa un objeto. El servidor valida los slots (una sola
    * armadura, manos ocupadas por armas a dos manos, etc.) y recalcula la CA.
    */
-  const handleToggleEquip = async (item: EquipmentItem) => {
+  const handleToggleEquip = async (
+    item: EquipmentItem,
+    slot?: EquipmentSlot,
+  ) => {
     if (!character) return;
     const currentEquip = (character.equipment as EquipmentItem[]) || [];
 
@@ -415,7 +420,7 @@ export default function CharacterDetailPage() {
       ? currentEquip.map((i) => (i.name === target.name ? stripSlot(i) : i))
       : currentEquip.map((i) =>
           i.name === target.name
-            ? { ...i, slot: getAllowedSlots(i)[0] }
+            ? { ...i, slot: slot ?? getAllowedSlots(i)[0] }
             : i,
         );
 
@@ -430,11 +435,7 @@ export default function CharacterDetailPage() {
       }
     } catch (err: unknown) {
       setCharacter((prev) => (prev ? { ...prev, equipment: currentEquip } : null));
-      setError(
-        err instanceof Error && err.message
-          ? err.message
-          : "Error al equipar el objeto",
-      );
+      setError(apiErrorMessage(err, "Error al equipar el objeto"));
     }
   };
 
@@ -1191,7 +1192,6 @@ export default function CharacterDetailPage() {
             ) : (
               currentEquipment.map((item) => {
                 const statLine = describeItemStats(item);
-                const equippable = isEquippable(item);
                 const isEquipped = Boolean(item.slot);
                 return (
                   <div
@@ -1223,23 +1223,14 @@ export default function CharacterDetailPage() {
                           {item.description}
                         </span>
                       )}
-                      {equippable && (
-                        <button
-                          onClick={() => handleToggleEquip(item)}
-                          className={`mt-1.5 text-[11px] px-2 py-0.5 rounded border font-semibold ${
-                            isEquipped
-                              ? "border-amber-600 text-amber-300 hover:bg-amber-900/50"
-                              : "border-slate-600 text-slate-400 hover:text-slate-200 hover:border-slate-500"
-                          }`}
-                          title={
-                            isEquipped
-                              ? `Desequipar (${SLOT_LABELS[item.slot!]})`
-                              : `Equipar en ${SLOT_LABELS[getAllowedSlots(item)[0]]}`
-                          }
-                        >
-                          {isEquipped ? "Desequipar" : "Equipar"}
-                        </button>
-                      )}
+                      <span className="mt-1.5 inline-block">
+                        <EquipButton
+                          item={item}
+                          equipped={isEquipped}
+                          canEquip
+                          onToggle={handleToggleEquip}
+                        />
+                      </span>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button

@@ -5,13 +5,14 @@ import { Character } from "@/types/character";
 import { characterService } from "@/services/character.service";
 import { useAuth } from "@/context/AuthContext";
 import { SRD_ITEMS, SrdItem } from "@/constants/item-catalog";
+import { apiErrorMessage } from "@/lib/api-error";
+import EquipButton from "@/components/EquipButton";
 import {
   SLOT_ICONS,
   SLOT_LABELS,
   describeItemStats,
   findCatalogItem,
   getAllowedSlots,
-  isEquippable,
   normalizeItemName,
   resolveItem,
 } from "@/lib/equipment";
@@ -29,6 +30,7 @@ import {
   getProficiencySource,
   getStartingFeats,
   EquipmentItem,
+  EquipmentSlot,
   FeatItem,
 } from "@/constants/dnd";
 
@@ -286,9 +288,9 @@ export default function CharacterSheetModal({
       if (saved?.armor !== undefined) {
         setCharacter((prev) => (prev ? { ...prev, armor: saved.armor } : null));
       }
-    } catch {
+    } catch (err: unknown) {
       setCharacter((prev) => (prev ? { ...prev, equipment: currentEquip } : null));
-      setError("Error al agregar objeto");
+      setError(apiErrorMessage(err, "Error al agregar objeto"));
     }
   };
 
@@ -296,7 +298,10 @@ export default function CharacterSheetModal({
    * Equipa/desequipa un objeto. El servidor valida los slots y recalcula la
    * CA; los conflictos (arma a dos manos vs escudo) vuelven como `error`.
    */
-  const handleToggleEquip = async (item: EquipmentItem) => {
+  const handleToggleEquip = async (
+    item: EquipmentItem,
+    slot?: EquipmentSlot,
+  ) => {
     if (!character || !isOwner) return;
     const currentEquip = (character.equipment as EquipmentItem[]) || [];
 
@@ -311,7 +316,7 @@ export default function CharacterSheetModal({
         )
       : currentEquip.map((i) =>
           i.name === target.name
-            ? { ...i, slot: getAllowedSlots(i)[0] }
+            ? { ...i, slot: slot ?? getAllowedSlots(i)[0] }
             : i,
         );
 
@@ -326,11 +331,7 @@ export default function CharacterSheetModal({
       }
     } catch (err: unknown) {
       setCharacter((prev) => (prev ? { ...prev, equipment: currentEquip } : null));
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : "Error al equipar el objeto";
-      setError(message);
+      setError(apiErrorMessage(err, "Error al equipar el objeto"));
     }
   };
 
@@ -1020,7 +1021,6 @@ export default function CharacterSheetModal({
                   <div className="space-y-2">
                     {currentEquipment.map((item, idx) => {
                       const statLine = describeItemStats(item);
-                      const equippable = isEquippable(item);
                       const isEquipped = Boolean(item.slot);
                       return (
                         <div
@@ -1058,23 +1058,12 @@ export default function CharacterSheetModal({
                             )}
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
-                            {equippable && isOwner && (
-                              <button
-                                onClick={() => handleToggleEquip(item)}
-                                className={`text-[11px] px-2 py-0.5 rounded border font-semibold ${
-                                  isEquipped
-                                    ? "border-amber-600 text-amber-300 hover:bg-amber-900/50"
-                                    : "border-slate-600 text-slate-400 hover:text-slate-200 hover:border-slate-500"
-                                }`}
-                                title={
-                                  isEquipped
-                                    ? `Desequipar (${SLOT_LABELS[item.slot!]})`
-                                    : `Equipar en ${SLOT_LABELS[getAllowedSlots(item)[0]]}`
-                                }
-                              >
-                                {isEquipped ? "Desequipar" : "Equipar"}
-                              </button>
-                            )}
+                            <EquipButton
+                              item={item}
+                              equipped={isEquipped}
+                              canEquip={isOwner}
+                              onToggle={handleToggleEquip}
+                            />
                             {isOwner && (
                               <div className="flex items-center gap-1">
                                 <button
