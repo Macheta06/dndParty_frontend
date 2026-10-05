@@ -1,7 +1,7 @@
 "use client";
 
 import { io, Socket } from "socket.io-client";
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import {
   gameService,
@@ -92,6 +92,11 @@ export default function GameRoomPage({
   const [activeSocket, setActiveSocket] = useState<Socket | null>(null);
   const [rollHistory, setRollHistory] = useState<DiceRollResult[]>([]);
 
+  // Tracks how many in-flight HP API calls exist per characterId.
+  // While > 0 the hpUpdated socket listener skips that id to avoid
+  // stale responses overwriting optimistic UI updates.
+  const pendingHpUpdates = useRef<Map<number, number>>(new Map());
+
   useEffect(() => {
     if (announcement) {
       const timer = setTimeout(() => setAnnouncement(null), 4000);
@@ -134,6 +139,8 @@ export default function GameRoomPage({
     socket.emit("joinGameRoom", gameId);
 
     socket.on("hpUpdated", (data: HpUpdate) => {
+      const pending = pendingHpUpdates.current.get(data.characterId) ?? 0;
+      if (pending > 0) return; // skip — we already applied optimistic update
       setGame((prevGame) => applyHpUpdate(prevGame, data));
     });
 
@@ -306,7 +313,7 @@ export default function GameRoomPage({
 
   if (error || !game) {
     return (
-      <div className="min-h-screen bg-slate-900 text-red-500 p-8 text-center font-bold">
+      <div className="min-h-screen bg-slate-800/50 text-red-500 p-8 text-center font-bold">
         {error || "Partida no encontrada"}
       </div>
     );
@@ -456,7 +463,7 @@ export default function GameRoomPage({
   const isMaster = user?.id === game.masterId;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-6 relative">
+    <div className="min-h-screen bg-slate-800/50 text-slate-100 p-6 relative">
       {/* Banner de anuncio en tiempo real */}
       {announcement && (
         <div className="fixed top-4 right-4 z-50 bg-amber-500 text-slate-950 font-bold px-4 py-2.5 rounded-xl shadow-2xl border border-amber-300 transition-all flex items-center gap-2">

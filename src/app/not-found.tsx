@@ -19,7 +19,7 @@ export default function NotFound() {
   }, [user, loading, router]);
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center">
+    <div className="min-h-screen bg-slate-800/50 text-slate-100 flex items-center justify-center">
       <div className="text-center space-y-3">
         <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
         <p className="text-amber-500 font-semibold text-sm animate-pulse">

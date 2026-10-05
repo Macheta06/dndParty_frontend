@@ -393,7 +393,7 @@ export default function CharacterDetailPage() {
 
   if (error && !character) {
     return (
-      <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col items-center justify-center gap-4">
+      <div className="min-h-screen bg-slate-800/50 text-slate-100 flex flex-col items-center justify-center gap-4">
         <p className="text-red-400 text-lg">{error}</p>
         <Link
           href="/dashboard"
@@ -416,7 +416,7 @@ export default function CharacterDetailPage() {
       : getStartingFeats(character.background);
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-6">
+    <div className="min-h-screen bg-slate-800/50 text-slate-100 p-6">
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Back link */}
         <Link

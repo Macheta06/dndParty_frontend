@@ -65,7 +65,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-6">
+    <div className="min-h-screen bg-slate-800/50 text-slate-100 p-6">
       {/* Header */}
       <header className="max-w-6xl mx-auto flex justify-between items-center pb-6 mb-8 border-b border-slate-800">
         <div>

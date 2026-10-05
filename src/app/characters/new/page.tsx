@@ -175,7 +175,7 @@ export default function NewCharacterPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-6">
+    <div className="min-h-screen bg-slate-800/50 text-slate-100 p-6">
       <div className="max-w-4xl mx-auto bg-slate-800 rounded-xl border border-slate-700 shadow-2xl overflow-hidden">
         {/* Header del Formulario */}
         <div className="bg-slate-950 px-8 py-6 border-b border-slate-700">

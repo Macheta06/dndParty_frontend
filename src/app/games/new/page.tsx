@@ -39,7 +39,7 @@ export default function NewGamePage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-6 flex items-center justify-center">
+    <div className="min-h-screen bg-slate-800/50 text-slate-100 p-6 flex items-center justify-center">
       <div className="w-full max-w-md bg-slate-800 p-8 rounded-xl border border-slate-700 shadow-2xl">
         <div className="mb-6">
           <Link

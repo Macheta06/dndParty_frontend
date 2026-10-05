@@ -54,7 +54,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-900 text-slate-100 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-slate-800/50 text-slate-100 p-4">
       <div className="w-full max-w-md bg-slate-800 p-8 rounded-xl shadow-2xl border border-slate-700">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-amber-500 mb-2">
