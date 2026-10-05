@@ -9,10 +9,12 @@ import {
   CreateNoteDto,
 } from "@/services/game.service";
 import {
+  CharacterRollResult,
   DiceRollResult,
   GameDetail,
   InitiativeState,
   Note,
+  RollEntry,
 } from "@/types/game";
 import { Character } from "@/types/character";
 import Link from "next/link";
@@ -84,13 +86,17 @@ export default function GameRoomPage({
   const [xpTargetId, setXpTargetId] = useState<number | "all">("all");
   const [isGrantingXp, setIsGrantingXp] = useState(false);
 
-  const [connectedPlayerIds, setConnectedPlayerIds] = useState<Set<number>>(new Set());
+  const [connectedPlayerIds, setConnectedPlayerIds] = useState<Set<number>>(
+    new Set(),
+  );
   const [announcement, setAnnouncement] = useState<string | null>(null);
 
-  const [selectedViewCharacterId, setSelectedViewCharacterId] = useState<number | null>(null);
+  const [selectedViewCharacterId, setSelectedViewCharacterId] = useState<
+    number | null
+  >(null);
 
   const [activeSocket, setActiveSocket] = useState<Socket | null>(null);
-  const [rollHistory, setRollHistory] = useState<DiceRollResult[]>([]);
+  const [rollHistory, setRollHistory] = useState<RollEntry[]>([]);
 
   // Tracks how many in-flight HP API calls exist per characterId.
   // While > 0 the hpUpdated socket listener skips that id to avoid
@@ -172,6 +178,10 @@ export default function GameRoomPage({
       setRollHistory((previous) => [...previous, roll].slice(-10));
     });
 
+    socket.on("characterRolled", (roll: CharacterRollResult) => {
+      setRollHistory((previous) => [...previous, roll].slice(-10));
+    });
+
     socket.on("xpGranted", (data: { characterId: number; exp: number }) => {
       setGame((prevGame) =>
         prevGame
@@ -187,7 +197,10 @@ export default function GameRoomPage({
 
     socket.on(
       "xpGrantedBulk",
-      (data: { xp: number; characters: Array<{ id: number; exp: number }> }) => {
+      (data: {
+        xp: number;
+        characters: Array<{ id: number; exp: number }>;
+      }) => {
         setGame((prevGame) =>
           prevGame
             ? {
@@ -202,12 +215,15 @@ export default function GameRoomPage({
       },
     );
 
-    socket.on("playerOnline", (data: { userId: number; characterName?: string }) => {
-      setConnectedPlayerIds((prev) => new Set(prev).add(data.userId));
-      if (data.characterName) {
-        setAnnouncement(`🟢 ${data.characterName} ha entrado a la sala.`);
-      }
-    });
+    socket.on(
+      "playerOnline",
+      (data: { userId: number; characterName?: string }) => {
+        setConnectedPlayerIds((prev) => new Set(prev).add(data.userId));
+        if (data.characterName) {
+          setAnnouncement(`🟢 ${data.characterName} ha entrado a la sala.`);
+        }
+      },
+    );
 
     socket.on("playerOffline", (data: { userId: number }) => {
       setConnectedPlayerIds((prev) => {
@@ -232,7 +248,9 @@ export default function GameRoomPage({
           characters: [...prevGame.characters, newChar],
         };
       });
-      setAnnouncement(`⚔️ ¡${newChar.name} (${newChar.race} ${newChar.class}) se ha unido a la partida!`);
+      setAnnouncement(
+        `⚔️ ¡${newChar.name} (${newChar.race} ${newChar.class}) se ha unido a la partida!`,
+      );
     });
 
     socket.on("playerLeft", (characterId: number) => {
@@ -240,7 +258,9 @@ export default function GameRoomPage({
         prevGame
           ? {
               ...prevGame,
-              characters: prevGame.characters.filter((c) => c.id !== characterId),
+              characters: prevGame.characters.filter(
+                (c) => c.id !== characterId,
+              ),
             }
           : prevGame,
       );
@@ -264,7 +284,8 @@ export default function GameRoomPage({
                 ? {
                     ...prevGame.initiative,
                     entries: prevGame.initiative.entries.filter(
-                      (entry) => !(entry.type === "npc" && entry.id === data.npcId),
+                      (entry) =>
+                        !(entry.type === "npc" && entry.id === data.npcId),
                     ),
                   }
                 : null,
@@ -541,7 +562,9 @@ export default function GameRoomPage({
                         <div>
                           <h3 className="font-bold text-lg text-slate-200 flex items-center gap-2">
                             <button
-                              onClick={() => setSelectedViewCharacterId(char.id)}
+                              onClick={() =>
+                                setSelectedViewCharacterId(char.id)
+                              }
                               className="hover:text-amber-400 underline decoration-amber-500/40 underline-offset-4 flex items-center gap-2 text-left cursor-pointer transition-colors group"
                               title={
                                 user?.id === char.userId
@@ -604,21 +627,24 @@ export default function GameRoomPage({
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {game.npcs.map((npc) => {
-                    const hpPercent = npc.max_hp > 0 ? npc.current_hp / npc.max_hp : 0;
-                    const statusLabel = npc.current_hp <= 0
-                      ? "💀 Derrotado"
-                      : hpPercent <= 0.25
-                        ? "🩸 Crítico"
-                        : hpPercent <= 0.5
-                          ? "🟠 Herido"
-                          : "🟢 Saludable";
-                    const statusColor = npc.current_hp <= 0
-                      ? "text-slate-500"
-                      : hpPercent <= 0.25
-                        ? "text-red-400"
-                        : hpPercent <= 0.5
-                          ? "text-amber-400"
-                          : "text-emerald-400";
+                    const hpPercent =
+                      npc.max_hp > 0 ? npc.current_hp / npc.max_hp : 0;
+                    const statusLabel =
+                      npc.current_hp <= 0
+                        ? "💀 Derrotado"
+                        : hpPercent <= 0.25
+                          ? "🩸 Crítico"
+                          : hpPercent <= 0.5
+                            ? "🟠 Herido"
+                            : "🟢 Saludable";
+                    const statusColor =
+                      npc.current_hp <= 0
+                        ? "text-slate-500"
+                        : hpPercent <= 0.25
+                          ? "text-red-400"
+                          : hpPercent <= 0.5
+                            ? "text-amber-400"
+                            : "text-emerald-400";
 
                     return (
                       <div
@@ -659,7 +685,9 @@ export default function GameRoomPage({
                                 </p>
                               </div>
                               <button
-                                onClick={() => handleDeleteNpc(npc.id, npc.name)}
+                                onClick={() =>
+                                  handleDeleteNpc(npc.id, npc.name)
+                                }
                                 className="text-slate-400 hover:text-red-400 p-1 rounded hover:bg-slate-700/60 transition-colors ml-1"
                                 title="Eliminar enemigo"
                               >
@@ -667,7 +695,9 @@ export default function GameRoomPage({
                               </button>
                             </div>
                           ) : (
-                            <span className={`text-sm font-bold ${statusColor}`}>
+                            <span
+                              className={`text-sm font-bold ${statusColor}`}
+                            >
                               {statusLabel}
                             </span>
                           )}
@@ -697,14 +727,18 @@ export default function GameRoomPage({
                               </span>
                               <div className="flex items-center gap-1">
                                 <button
-                                  onClick={() => handleNpcHpQuickChange(npc, -5)}
+                                  onClick={() =>
+                                    handleNpcHpQuickChange(npc, -5)
+                                  }
                                   className="px-2 py-0.5 text-xs font-bold bg-red-950/60 hover:bg-red-900 border border-red-800/50 text-red-300 rounded transition-colors"
                                   title="Reducir 5 HP"
                                 >
                                   -5
                                 </button>
                                 <button
-                                  onClick={() => handleNpcHpQuickChange(npc, -1)}
+                                  onClick={() =>
+                                    handleNpcHpQuickChange(npc, -1)
+                                  }
                                   className="px-2 py-0.5 text-xs font-bold bg-red-950/60 hover:bg-red-900 border border-red-800/50 text-red-300 rounded transition-colors"
                                   title="Reducir 1 HP"
                                 >
@@ -756,32 +790,30 @@ export default function GameRoomPage({
               <Chat socket={activeSocket} gameId={gameId} />
             </section>
 
-            {!isMaster &&
-              game.notes &&
-              game.notes.some((n) => n.is_public) && (
-                <div className="bg-slate-800 p-6 rounded-xl border border-amber-500/30 shadow-lg h-fit">
-                  <h2 className="text-xl font-bold text-amber-400 mb-4">
-                    Notas Públicas
-                  </h2>
-                  <div className="space-y-3 max-h-64 overflow-y-auto">
-                    {game.notes
-                      .filter((n) => n.is_public)
-                      .map((note) => (
-                        <div
-                          key={note.id}
-                          className="bg-slate-900 border border-slate-700 rounded p-3"
-                        >
-                          <h3 className="font-bold text-slate-200 text-sm">
-                            {note.title}
-                          </h3>
-                          <p className="text-xs text-slate-400 mt-1 whitespace-pre-wrap">
-                            {note.description}
-                          </p>
-                        </div>
-                      ))}
-                  </div>
+            {!isMaster && game.notes && game.notes.some((n) => n.is_public) && (
+              <div className="bg-slate-800 p-6 rounded-xl border border-amber-500/30 shadow-lg h-fit">
+                <h2 className="text-xl font-bold text-amber-400 mb-4">
+                  Notas Públicas
+                </h2>
+                <div className="space-y-3 max-h-64 overflow-y-auto">
+                  {game.notes
+                    .filter((n) => n.is_public)
+                    .map((note) => (
+                      <div
+                        key={note.id}
+                        className="bg-slate-900 border border-slate-700 rounded p-3"
+                      >
+                        <h3 className="font-bold text-slate-200 text-sm">
+                          {note.title}
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1 whitespace-pre-wrap">
+                          {note.description}
+                        </p>
+                      </div>
+                    ))}
                 </div>
-              )}
+              </div>
+            )}
 
             {isMaster && (
               <>
@@ -858,7 +890,10 @@ export default function GameRoomPage({
 
             <form onSubmit={handleCreateNpc} className="space-y-4">
               <div>
-                <label htmlFor="npc-name" className="block text-sm text-slate-300 mb-1">
+                <label
+                  htmlFor="npc-name"
+                  className="block text-sm text-slate-300 mb-1"
+                >
                   Nombre
                 </label>
                 <input
@@ -873,7 +908,10 @@ export default function GameRoomPage({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="npc-max-hp" className="block text-sm text-slate-300 mb-1">
+                  <label
+                    htmlFor="npc-max-hp"
+                    className="block text-sm text-slate-300 mb-1"
+                  >
                     HP Máximo
                   </label>
                   <input
@@ -891,7 +929,10 @@ export default function GameRoomPage({
                   />
                 </div>
                 <div>
-                  <label htmlFor="npc-current-hp" className="block text-sm text-slate-300 mb-1">
+                  <label
+                    htmlFor="npc-current-hp"
+                    className="block text-sm text-slate-300 mb-1"
+                  >
                     HP Actual
                   </label>
                   <input
@@ -912,7 +953,10 @@ export default function GameRoomPage({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="npc-race" className="block text-sm text-slate-300 mb-1">
+                  <label
+                    htmlFor="npc-race"
+                    className="block text-sm text-slate-300 mb-1"
+                  >
                     Raza (opcional)
                   </label>
                   <input
@@ -924,7 +968,10 @@ export default function GameRoomPage({
                   />
                 </div>
                 <div>
-                  <label htmlFor="npc-class" className="block text-sm text-slate-300 mb-1">
+                  <label
+                    htmlFor="npc-class"
+                    className="block text-sm text-slate-300 mb-1"
+                  >
                     Clase (opcional)
                   </label>
                   <input
@@ -973,7 +1020,10 @@ export default function GameRoomPage({
 
             <form onSubmit={handleCreateNote} className="space-y-4">
               <div>
-                <label htmlFor="note-title" className="block text-sm text-slate-300 mb-1">
+                <label
+                  htmlFor="note-title"
+                  className="block text-sm text-slate-300 mb-1"
+                >
                   Título
                 </label>
                 <input
@@ -987,7 +1037,10 @@ export default function GameRoomPage({
               </div>
 
               <div>
-                <label htmlFor="note-description" className="block text-sm text-slate-300 mb-1">
+                <label
+                  htmlFor="note-description"
+                  className="block text-sm text-slate-300 mb-1"
+                >
                   Descripción
                 </label>
                 <textarea
@@ -1008,7 +1061,10 @@ export default function GameRoomPage({
                   onChange={(e) => setNoteIsPublic(e.target.checked)}
                   className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-amber-500"
                 />
-                <label htmlFor="note-is-public" className="text-sm text-slate-300">
+                <label
+                  htmlFor="note-is-public"
+                  className="text-sm text-slate-300"
+                >
                   Nota pública (visible para todos los jugadores)
                 </label>
               </div>
@@ -1048,7 +1104,10 @@ export default function GameRoomPage({
 
             <form onSubmit={handleGrantXp} className="space-y-4">
               <div>
-                <label htmlFor="xp-amount" className="block text-sm text-slate-300 mb-1">
+                <label
+                  htmlFor="xp-amount"
+                  className="block text-sm text-slate-300 mb-1"
+                >
                   Cantidad de XP
                 </label>
                 <input
@@ -1058,21 +1117,28 @@ export default function GameRoomPage({
                   min={1}
                   value={xpAmount}
                   onChange={(e) =>
-                    setXpAmount(e.target.value === "" ? "" : Number(e.target.value))
+                    setXpAmount(
+                      e.target.value === "" ? "" : Number(e.target.value),
+                    )
                   }
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded focus:border-amber-500 text-slate-100"
                 />
               </div>
 
               <div>
-                <label htmlFor="xp-target" className="block text-sm text-slate-300 mb-1">
+                <label
+                  htmlFor="xp-target"
+                  className="block text-sm text-slate-300 mb-1"
+                >
                   Destino
                 </label>
                 <select
                   id="xp-target"
                   value={xpTargetId}
                   onChange={(e) =>
-                    setXpTargetId(e.target.value === "all" ? "all" : Number(e.target.value))
+                    setXpTargetId(
+                      e.target.value === "all" ? "all" : Number(e.target.value),
+                    )
                   }
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded focus:border-amber-500 text-slate-100"
                 >

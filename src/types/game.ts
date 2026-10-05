@@ -36,6 +36,54 @@ export interface DiceRollResult {
   total: number;
 }
 
+export type AbilityStat =
+  | "strength"
+  | "dexterity"
+  | "constitution"
+  | "intelligence"
+  | "wisdom"
+  | "charisma";
+
+export type AdvantageMode = "normal" | "advantage" | "disadvantage";
+
+/**
+ * Tira de habilidad o salvación ya resuelta por el server: el bono no lo
+ * suma el cliente, así que el número que se ve es el que se jugó.
+ */
+export interface CharacterRollResult {
+  kind: "skill" | "save";
+  /** id estable, por ejemplo `athletics` o `save:wisdom`. */
+  key: string;
+  label: string;
+  stat: AbilityStat;
+  statModifier: number;
+  proficient: boolean;
+  proficiencyBonus: number;
+  /** Bono total sumado al d20. */
+  modifier: number;
+  advantage: AdvantageMode;
+  /** Todos los dados tirados; dos con ventaja o desventaja. */
+  dice: number[];
+  /** El dado que cuenta. */
+  kept: number;
+  total: number;
+  dc?: number;
+  success?: boolean;
+  userId: number;
+  userName: string;
+  characterId: number;
+  characterName: string;
+}
+
+export type RollEntry = DiceRollResult | CharacterRollResult;
+
+/** `DiceRollResult` no trae `label`: con eso se distingue una de la otra. */
+export function isCharacterRoll(
+  entry: RollEntry,
+): entry is CharacterRollResult {
+  return "label" in entry;
+}
+
 export interface GameDetail extends Game {
   characters: Character[];
   npcs: Character[];
