@@ -933,6 +933,36 @@ export function getProficiencyBonus(level: number): number {
   return Math.floor((Math.max(1, level) - 1) / 4) + 2;
 }
 
+export interface SaveDetail {
+  id: string;
+  name: string;
+  stat: StatKey;
+}
+
+/**
+ * Las 6 salvaciones de 5e.
+ *
+ * `name` es el string que se guarda en `proficiencies`, así que tiene que
+ * calzar letra por letra con el `ROLLABLE_SAVES` del server: si no, la
+ * competencia no se reconoce y la tirada sale sin bono.
+ */
+export const DND_SAVES: SaveDetail[] = [
+  { id: 'save:strength', name: 'Salvación de Fuerza', stat: 'strength' },
+  { id: 'save:dexterity', name: 'Salvación de Destreza', stat: 'dexterity' },
+  {
+    id: 'save:constitution',
+    name: 'Salvación de Constitución',
+    stat: 'constitution',
+  },
+  {
+    id: 'save:intelligence',
+    name: 'Salvación de Inteligencia',
+    stat: 'intelligence',
+  },
+  { id: 'save:wisdom', name: 'Salvación de Sabiduría', stat: 'wisdom' },
+  { id: 'save:charisma', name: 'Salvación de Carisma', stat: 'charisma' },
+];
+
 export function getStartingProficiencies(
   backgroundName: string,
   raceName: string,

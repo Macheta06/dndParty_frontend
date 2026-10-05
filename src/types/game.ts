@@ -77,6 +77,17 @@ export interface CharacterRollResult {
 
 export type RollEntry = DiceRollResult | CharacterRollResult;
 
+/**
+ * Lo que la hoja pide tirar. El page le agrega el `gameId` antes de emitir:
+ * el cliente nunca manda modificadores, solo qué tirar.
+ */
+export interface CharacterRollRequest {
+  characterId: number;
+  kind: "skill" | "save";
+  key: string;
+  advantage?: AdvantageMode;
+}
+
 /** `DiceRollResult` no trae `label`: con eso se distingue una de la otra. */
 export function isCharacterRoll(
   entry: RollEntry,

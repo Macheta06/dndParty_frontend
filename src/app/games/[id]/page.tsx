@@ -1182,6 +1182,9 @@ export default function GameRoomPage({
           }
           onClose={() => setSelectedViewCharacterId(null)}
           isMaster={isMaster}
+          onRoll={(request) =>
+            activeSocket?.emit("rollCharacter", { gameId, ...request })
+          }
         />
       )}
     </div>

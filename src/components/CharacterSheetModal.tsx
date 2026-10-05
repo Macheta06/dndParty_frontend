@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Character } from "@/types/character";
+import type { AdvantageMode, CharacterRollRequest } from "@/types/game";
 import { characterService } from "@/services/character.service";
 import { useAuth } from "@/context/AuthContext";
 import { SRD_ITEMS, SrdItem } from "@/constants/item-catalog";
@@ -22,7 +23,9 @@ import {
   DND_BACKGROUNDS,
   DND_ALIGNMENTS,
   DND_SKILLS,
+  DND_SAVES,
   getClassLabel,
+  StatKey,
   getRaceLabel,
   getBackgroundLabel,
   getAlignmentLabel,
@@ -39,6 +42,12 @@ interface CharacterSheetModalProps {
   initialCharacter?: Character | null;
   onClose: () => void;
   isMaster?: boolean;
+  /**
+   * Pide tirar una habilidad o salvación. El page la emite por socket con el
+   * `gameId`; el server resuelve el bono y devuelve `characterRolled`.
+   * Si no hay partida abierta no se pasa y los botones no aparecen.
+   */
+  onRoll?: (request: CharacterRollRequest) => void;
 }
 
 const STAT_LABELS: Record<string, string> = {
@@ -70,9 +79,109 @@ const STAT_KEYS = [
 
 const SLOTS = ["armor", "shield", "weapon-main", "weapon-offhand"] as const;
 
+const ADVANTAGE_OPTIONS: AdvantageMode[] = [
+  "disadvantage",
+  "normal",
+  "advantage",
+];
+
+const ADVANTAGE_LABELS: Record<AdvantageMode, string> = {
+  normal: "Normal",
+  advantage: "Ventaja",
+  disadvantage: "Desventaja",
+};
+
+const SOURCE_BADGES: Record<"trasfondo" | "raza", string> = {
+  trasfondo: "Trasfondo",
+  raza: "Raza",
+};
+
 function getModifier(stat: number): string {
   const mod = Math.floor((stat - 10) / 2);
   return mod >= 0 ? `+${mod}` : `${mod}`;
+}
+
+interface RollableRowProps {
+  name: string;
+  /** Modificador ya calculado y formateado ("+5", "-1"). */
+  modifier: string;
+  isProficient: boolean;
+  /** Etiqueta de procedencia (trasfondo/raza); solo las habilidades. */
+  badge?: string | null;
+  /** Solo el dueño puede marcar o desmarcar la competencia. */
+  canEdit: boolean;
+  onToggle: () => void;
+  /** Si no se pasa no se dibuja el botón (hoja sin partida abierta). */
+  onRoll?: () => void;
+}
+
+/**
+ * Fila de una competencia: casilla para marcarla, nombre y modificador.
+ *
+ * El click en la fila alterna la competencia; tirar es un botón aparte con
+ * `stopPropagation` para que lanzar no desmarque sin querer.
+ */
+function RollableRow({
+  name,
+  modifier,
+  isProficient,
+  badge,
+  canEdit,
+  onToggle,
+  onRoll,
+}: RollableRowProps) {
+  return (
+    <div
+      onClick={() => canEdit && onToggle()}
+      className={`flex items-center justify-between p-2 rounded-lg text-xs border ${
+        canEdit ? "cursor-pointer transition-all" : ""
+      } ${
+        isProficient
+          ? "bg-amber-500/10 border-amber-500/30 text-slate-100"
+          : "bg-slate-950/40 border-slate-800/80 text-slate-400"
+      }`}
+    >
+      <div className="flex items-center gap-2 truncate">
+        <input
+          type="checkbox"
+          checked={isProficient}
+          readOnly
+          disabled={!canEdit}
+          className="rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-amber-500 focus:ring-offset-slate-900 cursor-pointer"
+        />
+        <span className="truncate font-medium">{name}</span>
+        {badge && (
+          <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1 py-0.2 rounded border border-amber-500/30 shrink-0">
+            {badge}
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 shrink-0 ml-2">
+        <span
+          className={`font-mono font-bold ${
+            isProficient ? "text-amber-400" : "text-slate-400"
+          }`}
+        >
+          {modifier}
+        </span>
+        {onRoll && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRoll();
+            }}
+            title={`Tirar ${name}`}
+            aria-label={`Tirar ${name}`}
+            className="text-[11px] px-1.5 py-0.5 rounded border border-slate-600 text-slate-400 hover:text-amber-300 hover:border-amber-500/60 hover:bg-amber-500/10 transition-colors"
+          >
+            🎲
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /** Copia del item sin el slot (desequipado). */
@@ -87,6 +196,7 @@ export default function CharacterSheetModal({
   initialCharacter,
   onClose,
   isMaster = false,
+  onRoll,
 }: CharacterSheetModalProps) {
   const { user } = useAuth();
   const [character, setCharacter] = useState<Character | null>(
@@ -95,6 +205,9 @@ export default function CharacterSheetModal({
   const [loading, setLoading] = useState<boolean>(!initialCharacter);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"stats" | "inventory" | "feats" | "story">("stats");
+
+  // Modo aplicado a las próximas tiradas de la hoja, igual que en la mesa.
+  const [advantage, setAdvantage] = useState<AdvantageMode>("normal");
 
   // Inventario resuelto contra el catálogo (items legados ganan categoría/stats)
   const resolvedEquipment = useMemo(
@@ -216,6 +329,15 @@ export default function CharacterSheetModal({
       setCharacter((prev) => (prev ? { ...prev, proficiencies: currentProfs } : null));
       setError("Error al actualizar la competencia");
     }
+  };
+
+  /**
+   * Pide tirar al server. Solo manda qué tirar: el atributo, la competencia
+   * y el bono los resuelve allá, así que lo que aparece en el historial es
+   * exactamente lo que se jugó.
+   */
+  const handleRoll = (kind: "skill" | "save", key: string) => {
+    onRoll?.({ characterId, kind, key, advantage });
   };
 
   const handleUpdateItemQty = async (itemName: string, delta: number) => {
@@ -441,6 +563,13 @@ export default function CharacterSheetModal({
 
   const currentProficiencies = (character.proficiencies as string[]) || [];
   const profBonus = getProficiencyBonus(character.level);
+
+  /** Modificador mostrado: atributo + bono si hay competencia. */
+  const proficiencyModifier = (stat: StatKey, proficient: boolean): string => {
+    const statVal = Number(character[stat] ?? 10);
+    const total = Math.floor((statVal - 10) / 2) + (proficient ? profBonus : 0);
+    return total >= 0 ? `+${total}` : `${total}`;
+  };
   const currentEquipment = resolvedEquipment;
   const equippedBySlot = equippedSlots;
 
@@ -696,71 +825,101 @@ export default function CharacterSheetModal({
                 })}
               </div>
 
-              {/* Lista de Competencias y Habilidades */}
-              <div className="bg-slate-900/70 border border-slate-700/80 rounded-xl p-4 space-y-3">
-                <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                  <h3 className="text-sm font-bold text-amber-400">
-                    Competencias de Habilidad (D&D 5e)
-                  </h3>
-                  {isOwner && (
-                    <span className="text-[11px] text-slate-400 italic">
-                      Haz clic para activar o desactivar tus competencias
-                    </span>
+              {/* Salvaciones y Competencias de Habilidad */}
+              <div className="bg-slate-900/70 border border-slate-700/80 rounded-xl p-4 space-y-4">
+                <div className="flex flex-wrap justify-between items-start gap-3 border-b border-slate-800 pb-2">
+                  <div className="space-y-0.5">
+                    <h3 className="text-sm font-bold text-amber-400">
+                      Salvaciones y Habilidades (D&D 5e)
+                    </h3>
+                    {isOwner && (
+                      <span className="text-[11px] text-slate-400 italic">
+                        Haz clic para activar o desactivar tus competencias
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Modo que se aplica a las próximas tiradas de la hoja */}
+                  {onRoll && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-[11px] text-slate-500 mr-1">
+                        Modo
+                      </span>
+                      {ADVANTAGE_OPTIONS.map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setAdvantage(mode)}
+                          aria-pressed={advantage === mode}
+                          className={`text-[11px] px-2 py-0.5 rounded border font-semibold transition-colors ${
+                            advantage === mode
+                              ? "border-amber-500/60 bg-amber-500/15 text-amber-300"
+                              : "border-slate-700 text-slate-400 hover:border-slate-500"
+                          }`}
+                        >
+                          {ADVANTAGE_LABELS[mode]}
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {DND_SKILLS.map((skill) => {
-                    const isProf = currentProficiencies.includes(skill.name);
-                    const statVal = Number(character[skill.stat] ?? 10);
-                    const statMod = Math.floor((statVal - 10) / 2);
-                    const totalMod = statMod + (isProf ? profBonus : 0);
-                    const modStr = totalMod >= 0 ? `+${totalMod}` : `${totalMod}`;
-                    const source = getProficiencySource(
-                      skill.name,
-                      character.background,
-                      character.race,
-                    );
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wide">
+                    Salvaciones
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {DND_SAVES.map((save) => {
+                      const isProf = currentProficiencies.includes(save.name);
+                      return (
+                        <RollableRow
+                          key={save.id}
+                          name={save.name}
+                          modifier={proficiencyModifier(save.stat, isProf)}
+                          isProficient={isProf}
+                          canEdit={isOwner}
+                          onToggle={() => handleToggleProficiency(save.name)}
+                          onRoll={
+                            onRoll
+                              ? () => handleRoll("save", save.id)
+                              : undefined
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
 
-                    return (
-                      <div
-                        key={skill.id}
-                        onClick={() => isOwner && handleToggleProficiency(skill.name)}
-                        className={`flex items-center justify-between p-2 rounded-lg text-xs border ${
-                          isOwner ? "cursor-pointer transition-all" : ""
-                        } ${
-                          isProf
-                            ? "bg-amber-500/10 border-amber-500/30 text-slate-100"
-                            : "bg-slate-950/40 border-slate-800/80 text-slate-400"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 truncate">
-                          <input
-                            type="checkbox"
-                            checked={isProf}
-                            readOnly
-                            disabled={!isOwner}
-                            className="rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-amber-500 focus:ring-offset-slate-900 cursor-pointer"
-                          />
-                          <span className="truncate font-medium">
-                            {skill.name}
-                          </span>
-                          {source && (
-                            <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1 py-0.2 rounded border border-amber-500/30 shrink-0">
-                              {source === "trasfondo" ? "Trasfondo" : "Raza"}
-                            </span>
-                          )}
-                        </div>
-                        <span
-                          className={`font-mono font-bold ml-2 ${
-                            isProf ? "text-amber-400" : "text-slate-400"
-                          }`}
-                        >
-                          {modStr}
-                        </span>
-                      </div>
-                    );
-                  })}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wide">
+                    Habilidades
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {DND_SKILLS.map((skill) => {
+                      const isProf = currentProficiencies.includes(skill.name);
+                      const source = getProficiencySource(
+                        skill.name,
+                        character.background,
+                        character.race,
+                      );
+                      return (
+                        <RollableRow
+                          key={skill.id}
+                          name={skill.name}
+                          modifier={proficiencyModifier(skill.stat, isProf)}
+                          isProficient={isProf}
+                          badge={source ? SOURCE_BADGES[source] : null}
+                          canEdit={isOwner}
+                          onToggle={() => handleToggleProficiency(skill.name)}
+                          onRoll={
+                            onRoll
+                              ? () => handleRoll("skill", skill.id)
+                              : undefined
+                          }
+                        />
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
