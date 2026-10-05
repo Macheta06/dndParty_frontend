@@ -1,9 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Character } from "@/types/character";
 import { characterService } from "@/services/character.service";
 import { useAuth } from "@/context/AuthContext";
+import { SRD_ITEMS, SrdItem } from "@/constants/item-catalog";
+import {
+  SLOT_ICONS,
+  SLOT_LABELS,
+  describeItemStats,
+  findCatalogItem,
+  getAllowedSlots,
+  isEquippable,
+  normalizeItemName,
+  resolveItem,
+} from "@/lib/equipment";
 import {
   DND_CLASSES,
   DND_RACES,
@@ -55,9 +66,18 @@ const STAT_KEYS = [
   "charisma",
 ] as const;
 
+const SLOTS = ["armor", "shield", "weapon-main", "weapon-offhand"] as const;
+
 function getModifier(stat: number): string {
   const mod = Math.floor((stat - 10) / 2);
   return mod >= 0 ? `+${mod}` : `${mod}`;
+}
+
+/** Copia del item sin el slot (desequipado). */
+function stripSlot(item: EquipmentItem): EquipmentItem {
+  const copy: EquipmentItem = { ...item };
+  delete copy.slot;
+  return copy;
 }
 
 export default function CharacterSheetModal({
@@ -74,6 +94,20 @@ export default function CharacterSheetModal({
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"stats" | "inventory" | "feats" | "story">("stats");
 
+  // Inventario resuelto contra el catálogo (items legados ganan categoría/stats)
+  const resolvedEquipment = useMemo(
+    () => ((character?.equipment as EquipmentItem[]) || []).map(resolveItem),
+    [character?.equipment],
+  );
+
+  const equippedSlots = useMemo(() => {
+    const map: Partial<Record<(typeof SLOTS)[number], EquipmentItem>> = {};
+    for (const item of resolvedEquipment) {
+      if (item.slot) map[item.slot] = item;
+    }
+    return map;
+  }, [resolvedEquipment]);
+
   // Edición general para el dueño
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState<Partial<Character>>({});
@@ -84,6 +118,16 @@ export default function CharacterSheetModal({
   const [newEquipName, setNewEquipName] = useState("");
   const [newEquipQty, setNewEquipQty] = useState(1);
   const [newEquipDesc, setNewEquipDesc] = useState("");
+  const [pickedEquip, setPickedEquip] = useState<SrdItem | null>(null);
+
+  // Sugestiones del catálogo SRD para autocompletar el nombre del objeto
+  const equipSuggestions = useMemo(() => {
+    const query = normalizeItemName(newEquipName);
+    if (query.length < 2) return [];
+    return SRD_ITEMS.filter((item) =>
+      normalizeItemName(item.name).includes(query),
+    ).slice(0, 7);
+  }, [newEquipName]);
 
   const [isAddingFeat, setIsAddingFeat] = useState(false);
   const [newFeatName, setNewFeatName] = useState("");
@@ -200,8 +244,10 @@ export default function CharacterSheetModal({
     if (!character || !isOwner || !newEquipName.trim()) return;
 
     const currentEquip = (character.equipment as EquipmentItem[]) || [];
+    const catalogHit = pickedEquip ?? findCatalogItem(newEquipName);
+    const finalName = catalogHit ? catalogHit.name : newEquipName.trim();
     const existingIndex = currentEquip.findIndex(
-      (i) => i.name.toLowerCase() === newEquipName.trim().toLowerCase(),
+      (i) => i.name.toLowerCase() === finalName.toLowerCase(),
     );
 
     let updated: EquipmentItem[];
@@ -215,9 +261,11 @@ export default function CharacterSheetModal({
       updated = [
         ...currentEquip,
         {
-          name: newEquipName.trim(),
+          name: finalName,
           quantity: Math.max(1, newEquipQty),
           description: newEquipDesc.trim() || undefined,
+          ...(catalogHit?.category && { category: catalogHit.category }),
+          ...(catalogHit?.stats && { stats: catalogHit.stats }),
         },
       ];
     }
@@ -225,15 +273,64 @@ export default function CharacterSheetModal({
     setNewEquipName("");
     setNewEquipQty(1);
     setNewEquipDesc("");
+    setPickedEquip(null);
     setIsAddingEquip(false);
 
     setCharacter((prev) => (prev ? { ...prev, equipment: updated } : null));
 
     try {
-      await characterService.updateCharacter(characterId, { equipment: updated });
+      const saved = await characterService.updateCharacter(characterId, {
+        equipment: updated,
+      });
+      // El servidor recalcula la CA: reflejamos el valor devuelto.
+      if (saved?.armor !== undefined) {
+        setCharacter((prev) => (prev ? { ...prev, armor: saved.armor } : null));
+      }
     } catch {
       setCharacter((prev) => (prev ? { ...prev, equipment: currentEquip } : null));
       setError("Error al agregar objeto");
+    }
+  };
+
+  /**
+   * Equipa/desequipa un objeto. El servidor valida los slots y recalcula la
+   * CA; los conflictos (arma a dos manos vs escudo) vuelven como `error`.
+   */
+  const handleToggleEquip = async (item: EquipmentItem) => {
+    if (!character || !isOwner) return;
+    const currentEquip = (character.equipment as EquipmentItem[]) || [];
+
+    const target = currentEquip.find(
+      (i) => i.name.toLowerCase() === item.name.toLowerCase(),
+    );
+    if (!target) return;
+
+    const updated = target.slot
+      ? currentEquip.map((i) =>
+          i.name === target.name ? stripSlot(i) : i,
+        )
+      : currentEquip.map((i) =>
+          i.name === target.name
+            ? { ...i, slot: getAllowedSlots(i)[0] }
+            : i,
+        );
+
+    setCharacter((prev) => (prev ? { ...prev, equipment: updated } : null));
+
+    try {
+      const saved = await characterService.updateCharacter(characterId, {
+        equipment: updated,
+      });
+      if (saved?.armor !== undefined) {
+        setCharacter((prev) => (prev ? { ...prev, armor: saved.armor } : null));
+      }
+    } catch (err: unknown) {
+      setCharacter((prev) => (prev ? { ...prev, equipment: currentEquip } : null));
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "Error al equipar el objeto";
+      setError(message);
     }
   };
 
@@ -343,7 +440,20 @@ export default function CharacterSheetModal({
 
   const currentProficiencies = (character.proficiencies as string[]) || [];
   const profBonus = getProficiencyBonus(character.level);
-  const currentEquipment = (character.equipment as EquipmentItem[]) || [];
+  const currentEquipment = resolvedEquipment;
+  const equippedBySlot = equippedSlots;
+
+  const armorEquipped = equippedSlots.armor;
+  const shieldEquipped = equippedSlots.shield;
+  const acBreakdown = [
+    armorEquipped
+      ? `${armorEquipped.name} (base ${armorEquipped.stats?.acBase ?? "?"})`
+      : "Sin armadura (base 10)",
+    shieldEquipped ? `+ Escudo ${shieldEquipped.stats?.acBase ?? 2}` : null,
+    `DES ${getModifier(character.dexterity)}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const currentFeats =
     (character.feature_traits as FeatItem[]) &&
     (character.feature_traits as FeatItem[]).length > 0
@@ -434,9 +544,12 @@ export default function CharacterSheetModal({
               </span>
             </div>
 
-            <div className="bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-xl text-center">
+            <div
+              className="bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-xl text-center"
+              title={acBreakdown}
+            >
               <span className="text-[10px] text-slate-400 uppercase font-semibold block">
-                CA (Armadura)
+                CA
               </span>
               <span className="text-sm font-bold font-mono text-amber-300">
                 {character.armor}
@@ -799,14 +912,45 @@ export default function CharacterSheetModal({
                     className="p-3 bg-slate-950 border border-amber-500/40 rounded-xl space-y-3"
                   >
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <input
-                        type="text"
-                        required
-                        placeholder="Nombre del objeto..."
-                        value={newEquipName}
-                        onChange={(e) => setNewEquipName(e.target.value)}
-                        className="sm:col-span-2 px-3 py-1.5 bg-slate-900 border border-slate-700 rounded text-xs text-slate-100"
-                      />
+                      <div className="relative sm:col-span-2">
+                        <input
+                          type="text"
+                          required
+                          placeholder="Nombre del objeto..."
+                          value={newEquipName}
+                          onChange={(e) => {
+                            setNewEquipName(e.target.value);
+                            setPickedEquip(null);
+                          }}
+                          className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded text-xs text-slate-100"
+                        />
+                        {equipSuggestions.length > 0 &&
+                          !equipSuggestions.some(
+                            (s) =>
+                              normalizeItemName(s.name) ===
+                              normalizeItemName(newEquipName),
+                          ) && (
+                            <ul className="absolute z-20 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded shadow-lg max-h-44 overflow-y-auto">
+                              {equipSuggestions.map((s) => (
+                                <li key={s.name}>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setNewEquipName(s.name);
+                                      setPickedEquip(s);
+                                    }}
+                                    className="w-full text-left px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800"
+                                  >
+                                    <span className="font-semibold">{s.name}</span>
+                                    <span className="text-slate-500 ml-1">
+                                      · {s.category}
+                                    </span>
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                      </div>
                       <input
                         type="number"
                         min={1}
@@ -816,6 +960,15 @@ export default function CharacterSheetModal({
                         className="px-3 py-1.5 bg-slate-900 border border-slate-700 rounded text-xs text-slate-100 font-mono"
                       />
                     </div>
+                    {pickedEquip && (
+                      <p className="text-[11px] text-amber-400/80">
+                        ✓ Del catálogo — {pickedEquip.category}
+                        {pickedEquip.stats?.acBase !== undefined &&
+                          ` · CA ${pickedEquip.stats.acBase}`}
+                        {pickedEquip.stats?.damage &&
+                          ` · ${pickedEquip.stats.damage} ${pickedEquip.stats.damageType ?? ""}`}
+                      </p>
+                    )}
                     <input
                       type="text"
                       placeholder="Descripción u observaciones (opcional)..."
@@ -832,50 +985,119 @@ export default function CharacterSheetModal({
                   </form>
                 )}
 
+                {/* Panel de slots: qué tiene equipado, visible para jugador y DM */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {SLOTS.map((slot) => {
+                    const equipped = equippedBySlot[slot];
+                    return (
+                      <div
+                        key={slot}
+                        className={`rounded-lg px-2.5 py-2 border text-[11px] ${
+                          equipped
+                            ? "bg-amber-950/50 border-amber-700/60 text-amber-200"
+                            : "bg-slate-950/60 border-slate-800 text-slate-600"
+                        }`}
+                      >
+                        <span className="mr-1">{SLOT_ICONS[slot]}</span>
+                        <span className="opacity-70">{SLOT_LABELS[slot]}</span>
+                        <p
+                          className={`truncate ${
+                            equipped ? "font-semibold text-xs" : "italic"
+                          }`}
+                        >
+                          {equipped ? equipped.name : "— libre —"}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+
                 {currentEquipment.length === 0 ? (
                   <p className="text-slate-500 italic text-xs py-2 text-center">
                     Sin objetos registrados en la mochila.
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {currentEquipment.map((item, idx) => (
-                      <div
-                        key={`${item.name}-${idx}`}
-                        className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex justify-between items-start gap-3"
-                      >
-                        <div>
-                          <span className="font-semibold text-slate-200 text-xs">
-                            {item.name}
-                          </span>
-                          {item.description && (
-                            <p className="text-[11px] text-slate-400 mt-0.5">
-                              {item.description}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {isOwner && (
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => handleUpdateItemQty(item.name, -1)}
-                                className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded"
+                    {currentEquipment.map((item, idx) => {
+                      const statLine = describeItemStats(item);
+                      const equippable = isEquippable(item);
+                      const isEquipped = Boolean(item.slot);
+                      return (
+                        <div
+                          key={`${item.name}-${idx}`}
+                          className={`p-3 rounded-lg border flex justify-between items-start gap-3 ${
+                            isEquipped
+                              ? "bg-amber-950/40 border-amber-700/60"
+                              : "bg-slate-950 border-slate-800"
+                          }`}
+                        >
+                          <div>
+                            <span className="font-semibold text-xs">
+                              <span
+                                className={
+                                  isEquipped ? "text-amber-300" : "text-slate-200"
+                                }
                               >
-                                -
-                              </button>
+                                {isEquipped && (
+                                  <span className="mr-1">
+                                    {SLOT_ICONS[item.slot!]}
+                                  </span>
+                                )}
+                                {item.name}
+                              </span>
+                            </span>
+                            {statLine && (
+                              <p className="text-[11px] text-slate-500 mt-0.5">
+                                {statLine}
+                              </p>
+                            )}
+                            {item.description && (
+                              <p className="text-[11px] text-slate-400 mt-0.5">
+                                {item.description}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {equippable && isOwner && (
                               <button
-                                onClick={() => handleUpdateItemQty(item.name, 1)}
-                                className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded"
+                                onClick={() => handleToggleEquip(item)}
+                                className={`text-[11px] px-2 py-0.5 rounded border font-semibold ${
+                                  isEquipped
+                                    ? "border-amber-600 text-amber-300 hover:bg-amber-900/50"
+                                    : "border-slate-600 text-slate-400 hover:text-slate-200 hover:border-slate-500"
+                                }`}
+                                title={
+                                  isEquipped
+                                    ? `Desequipar (${SLOT_LABELS[item.slot!]})`
+                                    : `Equipar en ${SLOT_LABELS[getAllowedSlots(item)[0]]}`
+                                }
                               >
-                                +
+                                {isEquipped ? "Desequipar" : "Equipar"}
                               </button>
-                            </div>
-                          )}
-                          <span className="font-mono text-xs font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                            x{item.quantity}
-                          </span>
+                            )}
+                            {isOwner && (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => handleUpdateItemQty(item.name, -1)}
+                                  className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded"
+                                >
+                                  -
+                                </button>
+                                <button
+                                  onClick={() => handleUpdateItemQty(item.name, 1)}
+                                  className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            )}
+                            <span className="font-mono text-xs font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                              x{item.quantity}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
