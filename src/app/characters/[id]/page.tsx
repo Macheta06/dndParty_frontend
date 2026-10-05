@@ -1,10 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { characterService } from "@/services/character.service";
 import { Character } from "@/types/character";
+import { SRD_ITEMS, SrdItem } from "@/constants/item-catalog";
+import {
+  SLOT_ICONS,
+  SLOT_LABELS,
+  describeItemStats,
+  findCatalogItem,
+  getAllowedSlots,
+  isEquippable,
+  normalizeItemName,
+  resolveItem,
+} from "@/lib/equipment";
 import {
   DND_CLASSES,
   DND_RACES,
@@ -52,9 +63,18 @@ const STAT_KEYS = [
   "charisma",
 ] as const;
 
+const SLOTS = ["armor", "shield", "weapon-main", "weapon-offhand"] as const;
+
 function getModifier(stat: number): string {
   const mod = Math.floor((stat - 10) / 2);
   return mod >= 0 ? `+${mod}` : `${mod}`;
+}
+
+/** Copia del item sin el slot (desequipado). */
+function stripSlot(item: EquipmentItem): EquipmentItem {
+  const copy: EquipmentItem = { ...item };
+  delete copy.slot;
+  return copy;
 }
 
 function getHpColor(current: number, max: number): string {
@@ -94,6 +114,30 @@ export default function CharacterDetailPage() {
   const [newFeatName, setNewFeatName] = useState("");
   const [newFeatCategory, setNewFeatCategory] = useState("Dote de Origen");
   const [newFeatDesc, setNewFeatDesc] = useState("");
+  const [pickedEquip, setPickedEquip] = useState<SrdItem | null>(null);
+
+  // Inventario resuelto contra el catálogo (los items legados ganan stats)
+  const resolvedEquipment = useMemo(
+    () => ((character?.equipment as EquipmentItem[]) || []).map(resolveItem),
+    [character?.equipment],
+  );
+
+  const equippedSlots = useMemo(() => {
+    const map: Partial<Record<(typeof SLOTS)[number], EquipmentItem>> = {};
+    for (const item of resolvedEquipment) {
+      if (item.slot) map[item.slot] = item;
+    }
+    return map;
+  }, [resolvedEquipment]);
+
+  // Autocompletado del catálogo SRD al escribir el nombre del objeto
+  const equipSuggestions = useMemo(() => {
+    const query = normalizeItemName(newEquipName);
+    if (query.length < 2) return [];
+    return SRD_ITEMS.filter((item) =>
+      normalizeItemName(item.name).includes(query),
+    ).slice(0, 7);
+  }, [newEquipName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -306,8 +350,10 @@ export default function CharacterDetailPage() {
     if (!character || !newEquipName.trim()) return;
 
     const currentEquip = (character.equipment as EquipmentItem[]) || [];
+    const catalogHit = pickedEquip ?? findCatalogItem(newEquipName);
+    const finalName = catalogHit ? catalogHit.name : newEquipName.trim();
     const existingIndex = currentEquip.findIndex(
-      (i) => i.name.toLowerCase() === newEquipName.trim().toLowerCase(),
+      (i) => i.name.toLowerCase() === finalName.toLowerCase(),
     );
 
     let updated: EquipmentItem[];
@@ -321,9 +367,11 @@ export default function CharacterDetailPage() {
       updated = [
         ...currentEquip,
         {
-          name: newEquipName.trim(),
+          name: finalName,
           quantity: Math.max(1, newEquipQty),
           description: newEquipDesc.trim() || undefined,
+          ...(catalogHit?.category && { category: catalogHit.category }),
+          ...(catalogHit?.stats && { stats: catalogHit.stats }),
         },
       ];
     }
@@ -331,15 +379,62 @@ export default function CharacterDetailPage() {
     setNewEquipName("");
     setNewEquipQty(1);
     setNewEquipDesc("");
+    setPickedEquip(null);
     setIsAddingEquip(false);
 
     setCharacter((prev) => (prev ? { ...prev, equipment: updated } : null));
 
     try {
-      await characterService.updateCharacter(id, { equipment: updated });
+      const saved = await characterService.updateCharacter(id, {
+        equipment: updated,
+      });
+      // El servidor recalcula la CA: reflejamos el valor devuelto.
+      if (saved?.armor !== undefined) {
+        setCharacter((prev) => (prev ? { ...prev, armor: saved.armor } : null));
+      }
     } catch {
       setCharacter((prev) => (prev ? { ...prev, equipment: currentEquip } : null));
       setError("Error al agregar objeto");
+    }
+  };
+
+  /**
+   * Equipa/desequipa un objeto. El servidor valida los slots (una sola
+   * armadura, manos ocupadas por armas a dos manos, etc.) y recalcula la CA.
+   */
+  const handleToggleEquip = async (item: EquipmentItem) => {
+    if (!character) return;
+    const currentEquip = (character.equipment as EquipmentItem[]) || [];
+
+    const target = currentEquip.find(
+      (i) => i.name.toLowerCase() === item.name.toLowerCase(),
+    );
+    if (!target) return;
+
+    const updated = target.slot
+      ? currentEquip.map((i) => (i.name === target.name ? stripSlot(i) : i))
+      : currentEquip.map((i) =>
+          i.name === target.name
+            ? { ...i, slot: getAllowedSlots(i)[0] }
+            : i,
+        );
+
+    setCharacter((prev) => (prev ? { ...prev, equipment: updated } : null));
+
+    try {
+      const saved = await characterService.updateCharacter(id, {
+        equipment: updated,
+      });
+      if (saved?.armor !== undefined) {
+        setCharacter((prev) => (prev ? { ...prev, armor: saved.armor } : null));
+      }
+    } catch (err: unknown) {
+      setCharacter((prev) => (prev ? { ...prev, equipment: currentEquip } : null));
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Error al equipar el objeto",
+      );
     }
   };
 
@@ -408,7 +503,18 @@ export default function CharacterDetailPage() {
   if (!character) return null;
 
   const e = editing ? editData : character;
-  const currentEquipment = (character.equipment as EquipmentItem[]) || [];
+  const currentEquipment = resolvedEquipment;
+  const armorEquipped = equippedSlots.armor;
+  const shieldEquipped = equippedSlots.shield;
+  const acBreakdown = [
+    armorEquipped
+      ? `${armorEquipped.name} (base ${armorEquipped.stats?.acBase ?? "?"})`
+      : "Sin armadura (base 10)",
+    shieldEquipped ? `+ Escudo ${shieldEquipped.stats?.acBase ?? 2}` : null,
+    `DES ${getModifier(character.dexterity)}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const currentFeats =
     (character.feature_traits as FeatItem[]) &&
     (character.feature_traits as FeatItem[]).length > 0
@@ -801,13 +907,19 @@ export default function CharacterDetailPage() {
             </div>
 
             {/* CA */}
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-700 text-center">
+            <div
+              className="bg-slate-950 p-4 rounded-xl border border-slate-700 text-center"
+              title={acBreakdown}
+            >
               <label className="block text-xs uppercase text-slate-400 font-semibold mb-1">
                 Clase Armadura (AC)
               </label>
               <span className="text-2xl font-extrabold text-amber-400 font-mono">
                 {character.armor}
               </span>
+              <p className="text-[10px] text-slate-500 mt-1 leading-tight">
+                {acBreakdown}
+              </p>
             </div>
 
             {/* Dado de Golpe */}
@@ -955,7 +1067,7 @@ export default function CharacterDetailPage() {
               className="bg-slate-950 p-4 rounded-lg border border-amber-500/40 space-y-3"
             >
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="sm:col-span-2">
+                <div className="sm:col-span-2 relative">
                   <label className="block text-xs text-slate-300 mb-1">
                     Nombre del Objeto / Arma / Armadura
                   </label>
@@ -963,10 +1075,39 @@ export default function CharacterDetailPage() {
                     type="text"
                     required
                     value={newEquipName}
-                    onChange={(e) => setNewEquipName(e.target.value)}
+                    onChange={(e) => {
+                      setNewEquipName(e.target.value);
+                      setPickedEquip(null);
+                    }}
                     placeholder="Ej: Poción de Curación"
                     className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-sm focus:border-amber-500"
                   />
+                  {equipSuggestions.length > 0 &&
+                    !equipSuggestions.some(
+                      (s) =>
+                        normalizeItemName(s.name) ===
+                        normalizeItemName(newEquipName),
+                    ) && (
+                      <ul className="absolute z-20 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded shadow-lg max-h-52 overflow-y-auto">
+                        {equipSuggestions.map((s) => (
+                          <li key={s.name}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewEquipName(s.name);
+                                setPickedEquip(s);
+                              }}
+                              className="w-full text-left px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800"
+                            >
+                              <span className="font-semibold">{s.name}</span>
+                              <span className="text-slate-500 ml-1">
+                                · {s.category}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                 </div>
                 <div>
                   <label className="block text-xs text-slate-300 mb-1">
@@ -993,6 +1134,15 @@ export default function CharacterDetailPage() {
                   className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-sm focus:border-amber-500"
                 />
               </div>
+              {pickedEquip && (
+                <p className="text-[11px] text-amber-400/80">
+                  ✓ Del catálogo — {pickedEquip.category}
+                  {pickedEquip.stats?.acBase !== undefined &&
+                    ` · CA ${pickedEquip.stats.acBase}`}
+                  {pickedEquip.stats?.damage &&
+                    ` · ${pickedEquip.stats.damage} ${pickedEquip.stats.damageType ?? ""}`}
+                </p>
+              )}
               <button
                 type="submit"
                 className="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded transition-colors"
@@ -1002,48 +1152,117 @@ export default function CharacterDetailPage() {
             </form>
           )}
 
+          {/* Panel de slots: qué tiene equipado, visible para jugador y DM */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {SLOTS.map((slot) => {
+              const equipped = equippedSlots[slot];
+              return (
+                <div
+                  key={slot}
+                  className={`rounded-lg px-3 py-2.5 border ${
+                    equipped
+                      ? "bg-amber-950/50 border-amber-700/60"
+                      : "bg-slate-950/60 border-slate-800"
+                  }`}
+                >
+                  <span className="text-[10px] uppercase tracking-wide opacity-70 block">
+                    <span className="mr-1">{SLOT_ICONS[slot]}</span>
+                    {SLOT_LABELS[slot]}
+                  </span>
+                  <span
+                    className={`text-xs truncate block ${
+                      equipped
+                        ? "font-bold text-amber-200"
+                        : "italic text-slate-600"
+                    }`}
+                  >
+                    {equipped ? equipped.name : "— libre —"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {currentEquipment.length === 0 ? (
               <p className="text-slate-500 italic text-sm md:col-span-3">
                 El inventario está vacío.
               </p>
             ) : (
-              currentEquipment.map((item) => (
-                <div
-                  key={item.name}
-                  className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between gap-2 shadow-inner"
-                >
-                  <div className="min-w-0 flex-1">
-                    <span className="font-semibold text-slate-200 text-xs truncate block">
-                      {item.name}
-                    </span>
-                    {item.description && (
-                      <span className="text-[11px] text-slate-400 block truncate">
-                        {item.description}
+              currentEquipment.map((item) => {
+                const statLine = describeItemStats(item);
+                const equippable = isEquippable(item);
+                const isEquipped = Boolean(item.slot);
+                return (
+                  <div
+                    key={item.name}
+                    className={`p-3 rounded-lg border flex items-center justify-between gap-2 shadow-inner ${
+                      isEquipped
+                        ? "bg-amber-950/40 border-amber-700/60"
+                        : "bg-slate-950 border-slate-800"
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span
+                        className={`font-semibold text-xs truncate block ${
+                          isEquipped ? "text-amber-300" : "text-slate-200"
+                        }`}
+                      >
+                        {isEquipped && (
+                          <span className="mr-1">{SLOT_ICONS[item.slot!]}</span>
+                        )}
+                        {item.name}
                       </span>
-                    )}
+                      {statLine && (
+                        <span className="text-[11px] text-slate-500 block truncate">
+                          {statLine}
+                        </span>
+                      )}
+                      {item.description && (
+                        <span className="text-[11px] text-slate-400 block truncate">
+                          {item.description}
+                        </span>
+                      )}
+                      {equippable && (
+                        <button
+                          onClick={() => handleToggleEquip(item)}
+                          className={`mt-1.5 text-[11px] px-2 py-0.5 rounded border font-semibold ${
+                            isEquipped
+                              ? "border-amber-600 text-amber-300 hover:bg-amber-900/50"
+                              : "border-slate-600 text-slate-400 hover:text-slate-200 hover:border-slate-500"
+                          }`}
+                          title={
+                            isEquipped
+                              ? `Desequipar (${SLOT_LABELS[item.slot!]})`
+                              : `Equipar en ${SLOT_LABELS[getAllowedSlots(item)[0]]}`
+                          }
+                        >
+                          {isEquipped ? "Desequipar" : "Equipar"}
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => handleUpdateItemQty(item.name, -1)}
+                        className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-mono rounded border border-slate-700"
+                        title="Restar 1"
+                      >
+                        -
+                      </button>
+                      <span className="text-amber-400 font-bold font-mono text-xs px-1">
+                        x{item.quantity}
+                      </span>
+                      <button
+                        onClick={() => handleUpdateItemQty(item.name, 1)}
+                        className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-mono rounded border border-slate-700"
+                        title="Sumar 1"
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => handleUpdateItemQty(item.name, -1)}
-                      className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-mono rounded border border-slate-700"
-                      title="Restar 1"
-                    >
-                      -
-                    </button>
-                    <span className="text-amber-400 font-bold font-mono text-xs px-1">
-                      x{item.quantity}
-                    </span>
-                    <button
-                      onClick={() => handleUpdateItemQty(item.name, 1)}
-                      className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-mono rounded border border-slate-700"
-                      title="Sumar 1"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
