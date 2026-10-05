@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check:catalog": "node scripts/check-catalog.mjs"
   },
   "dependencies": {
     "axios": "^1.19.0",
