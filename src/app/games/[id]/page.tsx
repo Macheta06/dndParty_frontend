@@ -275,19 +275,27 @@ export default function GameRoomPage({
 
     socket.on(
       "equipmentUpdated",
-      (data: { characterId: number; equipment: unknown[] }) => {
+      (data: { characterId: number; equipment: unknown[]; armor?: number }) => {
         setGame((prevGame) =>
           prevGame
             ? {
                 ...prevGame,
                 characters: prevGame.characters.map((c) =>
                   c.id === data.characterId
-                    ? { ...c, equipment: data.equipment }
+                    ? {
+                        ...c,
+                        equipment: data.equipment,
+                        ...(data.armor !== undefined && { armor: data.armor }),
+                      }
                     : c,
                 ),
                 npcs: prevGame.npcs.map((npc) =>
                   npc.id === data.characterId
-                    ? { ...npc, equipment: data.equipment }
+                    ? {
+                        ...npc,
+                        equipment: data.equipment,
+                        ...(data.armor !== undefined && { armor: data.armor }),
+                      }
                     : npc,
                 ),
               }
