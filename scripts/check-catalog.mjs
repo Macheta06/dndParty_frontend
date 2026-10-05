@@ -101,9 +101,73 @@ console.log(
 );
 for (const n of clientEquipableNotInServer) console.log(`   - ${n}`);
 
-// Gate: cualquier desalineación rompe equipar o computar CA.
+// ── Daño de armas ───────────────────────────────────────────────
+// Un `damage` distinto entre repos haría que los ataques tiren otro dado
+// sin que nadie se dé cuenta, así que se cruza igual que los nombres.
+const clientWeaponDamage = new Map();
+for (const m of clientCatalog.matchAll(
+  /^\s*(?:w|wr)\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"/gm,
+)) {
+  clientWeaponDamage.set(norm(m[1]), {
+    damage: m[2],
+    damageType: norm(m[3]),
+  });
+}
+
+// Chunks del catálogo del server: de una clave a la siguiente.
+const entryStarts = [
+  ...inCatalog.matchAll(/^ {2}(?:'([^']+)'|([a-záéíóúñü0-9 ]+)): \{/gmi),
+];
+const serverWeapons = new Map();
+entryStarts.forEach((m, i) => {
+  const start = m.index;
+  const end =
+    i + 1 < entryStarts.length ? entryStarts[i + 1].index : inCatalog.length;
+  const body = inCatalog.slice(start, end);
+  if (!/category:\s*'weapon'/.test(body)) return;
+  const damage = body.match(/damage:\s*'([^']+)'/);
+  const damageType = body.match(/damageType:\s*'([^']+)'/);
+  serverWeapons.set(norm(m[1] ?? m[2]), {
+    damage: damage ? damage[1] : null,
+    damageType: damageType ? damageType[1] : null,
+  });
+});
+
+const damageMismatch = [];
+for (const [name, expected] of clientWeaponDamage) {
+  const actual = serverWeapons.get(name);
+  if (!actual) continue; // ya lo reporta el cruce de nombres
+  if (
+    actual.damage !== expected.damage ||
+    actual.damageType !== expected.damageType
+  ) {
+    damageMismatch.push({ name, expected, actual });
+  }
+}
+
+console.log(
+  `\n⚠ Armas con daño desalineado cliente ↔ server: ${damageMismatch.length}`,
+);
+for (const d of damageMismatch) {
+  console.log(
+    `   - ${d.name}: server ${d.actual.damage ?? "sin daño"}/${
+      d.actual.damageType ?? "sin tipo"
+    } — cliente ${d.expected.damage}/${d.expected.damageType}`,
+  );
+}
+
+const weaponsWithoutDamage = [...serverWeapons].filter(
+  ([, v]) => !v.damage || !v.damageType,
+);
+console.log(`\n⚠ Armas del server sin daño: ${weaponsWithoutDamage.length}`);
+for (const [n] of weaponsWithoutDamage) console.log(`   - ${n}`);
+
+// Gate: cualquier desalineación rompe equipar, computar CA o atacar.
 const failed =
-  grantedNotInClient.length > 0 || clientEquipableNotInServer.length > 0;
+  grantedNotInClient.length > 0 ||
+  clientEquipableNotInServer.length > 0 ||
+  damageMismatch.length > 0 ||
+  weaponsWithoutDamage.length > 0;
 
 if (failed) {
   console.error("\n✗ Catálogo desalineado.");
